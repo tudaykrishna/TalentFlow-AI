@@ -131,24 +131,70 @@ st.divider()
 # View assigned interviews
 st.subheader("📋 Recently Assigned Interviews")
 
-# Mock data for now - in production, fetch from backend
 try:
-    # You can implement an endpoint to get interviews by recruiter_id
-    st.info("Viewing assigned interviews - Feature coming soon!")
+    # Fetch interviews assigned by this recruiter
+    response = requests.get(f"{API_BASE_URL}/interview/recruiter/{recruiter_id}/assigned", timeout=5)
     
-    # Example display
-    example_data = [
-        {"Candidate ID": "user_001", "Job Title": "Senior Backend Engineer", "Status": "Assigned", "Date": "2024-01-15"},
-        {"Candidate ID": "user_002", "Job Title": "Python Developer", "Status": "In Progress", "Date": "2024-01-14"},
-        {"Candidate ID": "user_003", "Job Title": "Senior Backend Engineer", "Status": "Completed", "Date": "2024-01-13"},
-    ]
-    
-    import pandas as pd
-    df = pd.DataFrame(example_data)
-    st.dataframe(df, use_container_width=True, hide_index=True)
-    
+    if response.status_code == 200:
+        interviews = response.json()
+        
+        if interviews:
+            # Prepare data for display
+            interview_data = []
+            for interview in interviews:
+                interview_data.append({
+                    "Candidate": interview.get("candidate_name", "N/A"),
+                    "Username": interview.get("candidate_username", "N/A"),
+                    "Job Title": interview.get("job_title", "N/A"),
+                    "Status": interview.get("status", "N/A"),
+                    "Questions": f"{interview.get('questions_completed', 0)}/{interview.get('max_questions', 0)}",
+                    "Assigned Date": interview.get("created_at", "")[:10] if interview.get("created_at") else "N/A"
+                })
+            
+            # Display as dataframe
+            import pandas as pd
+            df = pd.DataFrame(interview_data)
+            
+            # Color code by status
+            def highlight_status(row):
+                if row['Status'] == 'Completed':
+                    return ['background-color: #d4edda'] * len(row)
+                elif row['Status'] == 'In Progress':
+                    return ['background-color: #fff3cd'] * len(row)
+                elif row['Status'] == 'Assigned':
+                    return ['background-color: #d1ecf1'] * len(row)
+                else:
+                    return [''] * len(row)
+            
+            st.dataframe(
+                df.style.apply(highlight_status, axis=1),
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            st.caption(f"📊 Total interviews assigned: {len(interviews)}")
+            
+            # Summary stats
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                assigned_count = len([i for i in interviews if i.get('status') == 'Assigned'])
+                st.metric("🆕 Assigned", assigned_count)
+            with col2:
+                in_progress_count = len([i for i in interviews if i.get('status') == 'In Progress'])
+                st.metric("⏳ In Progress", in_progress_count)
+            with col3:
+                completed_count = len([i for i in interviews if i.get('status') == 'Completed'])
+                st.metric("✅ Completed", completed_count)
+        else:
+            st.info("📭 No interviews assigned yet. Assign your first interview above!")
+            
+    else:
+        st.warning("⚠️ Unable to fetch assigned interviews. Please try again later.")
+        
+except requests.exceptions.RequestException as e:
+    st.error(f"❌ Error connecting to backend: {str(e)}")
 except Exception as e:
-    st.error(f"Error loading interviews: {str(e)}")
+    st.error(f"❌ Error loading interviews: {str(e)}")
 
 st.divider()
 

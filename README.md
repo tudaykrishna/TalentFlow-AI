@@ -11,12 +11,16 @@
 - [Features](#features)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
+- [Authentication System](#authentication-system)
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Running the Application](#running-the-application)
 - [Usage Guide](#usage-guide)
-- [API Documentation](#api-documentation)
 - [Voice Features](#voice-features)
+- [API Documentation](#api-documentation)
+- [Testing](#testing)
+- [Troubleshooting](#troubleshooting)
+- [Latest Updates](#latest-updates)
 - [Contributing](#contributing)
 
 ---
@@ -29,8 +33,10 @@ TalentFlow AI is a comprehensive HR recruitment platform that leverages artifici
 
 1. **Resume Screener & Candidate Matcher** - ATS-like system for automated resume screening
 2. **JD Generator** - AI-powered job description creation with PDF export
-3. **AI Interview** - Automated initial screening interviews with voice input/output
-4. **Voice Processing** - Local GPU-accelerated speech-to-text and cloud text-to-speech
+3. **AI Interview** - Personalized screening interviews with resume-based question generation
+4. **Voice Processing** - Local GPU-accelerated speech-to-text and Google text-to-speech
+5. **AI Recruiter Assistant** - Intelligent chatbot to help recruiters navigate the platform
+6. **Interview Management** - Complete interview lifecycle tracking and management
 
 ---
 
@@ -54,14 +60,23 @@ TalentFlow AI is a comprehensive HR recruitment platform that leverages artifici
 - **🎤 Interview Assignment**
   - Assign AI interviews to candidates
   - Auto-generate temporary user accounts
-  - Configurable question count
-  - Track interview progress
-  - View candidate performance
+  - Configurable question count (3-10 questions)
+  - **Resume Upload Required** - Candidates upload resume before interview
+  - **Interview Preferences** - Configure Audio/Text modes for both interviewer and candidate
+  - **Recently Assigned Interviews** - Real-time tracking with color-coded status
+  - Summary metrics (Assigned/In Progress/Completed)
 
 - **📊 Interview Results**
   - View completed interview results
   - Detailed candidate evaluations
   - Performance summaries and recommendations
+  - Filter by recruiter and status
+
+- **🤖 AI Recruiter Assistant**
+  - **Sidebar Chatbot** - Available on all recruiter pages
+  - **Azure OpenAI Powered** - Intelligent responses to recruiting questions
+  - **Context-Aware** - Understands TalentFlow AI platform features
+  - **No Memory** - Simple, session-based conversations
 
 ### For Users/Candidates
 
@@ -71,12 +86,15 @@ TalentFlow AI is a comprehensive HR recruitment platform that leverages artifici
   - Review completed interviews
 
 - **🎙️ AI Interview**
-  - Interactive AI-powered interviews
+  - **Resume-Based Personalization** - Questions generated from candidate's resume + job description
+  - **Interview Preferences** - Choose Audio/Text modes for questions and responses
   - **Voice Input**: Speak your answers (local Whisper transcription)
-  - **Voice Output**: AI speaks questions (Azure Speech Services)
-  - Real-time question generation
-  - Immediate answer evaluation
-  - Comprehensive performance summary
+  - **Voice Output**: Play questions as audio (Google Text-to-Speech)
+  - **Manual Audio Control** - "Play Question as Audio" button for each question
+  - Real-time question generation based on candidate background
+  - Immediate answer evaluation with detailed feedback
+  - Comprehensive performance summary with hiring recommendation
+  - **Resume Upload Required** - Upload PDF resume before starting interview
 
 ### For Admins
 
@@ -108,16 +126,18 @@ TalentFlow AI is a comprehensive HR recruitment platform that leverages artifici
 - **Uvicorn** - ASGI server
 
 ### AI/ML
-- **Azure OpenAI (GPT-4)** - JD generation and interviews
-- **Ollama (Llama 3.1)** - Resume screening
-- **LangChain** - AI workflow orchestration
+- **Azure OpenAI (GPT-4o-mini)** - JD generation, interviews, and recruiter chatbot
+- **Ollama (Llama 3.1:8b)** - Resume screening
+- **LangChain** - AI workflow orchestration and prompt management
 - **LangGraph** - Interview state management
 - **Local Whisper (faster-whisper)** - GPU-accelerated speech-to-text
+- **Dynamic Question Generation** - Resume + JD analysis for personalized interviews
 
 ### Voice Processing
-- **Local Whisper** - Speech-to-text (GPU-accelerated, free)
-- **Azure Speech Services** - Text-to-speech (high quality)
+- **Local Whisper** - Speech-to-text (GPU-accelerated, free, privacy-focused)
+- **Google Text-to-Speech (gTTS)** - High-quality text-to-speech (free, cloud-based)
 - **Audio Processing** - Real-time voice capture and playback
+- **Manual Audio Control** - User-controlled audio generation and playback
 
 ### Database
 - **MongoDB** - NoSQL document database
@@ -136,12 +156,16 @@ TalentFlow-AI/
 │   │   ├── Demo2.py                    # Analytics
 │   │   └── Demo3.py                    # System Logs
 │   │
+│   ├── utils/                          # Utility modules
+│   │   └── env_loader.py               # Environment variable loader
+│   │
 │   ├── Recruiter/                      # Recruiter screens
-│   │   ├── recruiter.py                # Dashboard
+│   │   ├── recruiter.py                # Dashboard with AI Chatbot
 │   │   ├── jd_generator.py             # JD Generator
 │   │   ├── resume_screener.py          # Resume Screener
-│   │   ├── interview_assignment.py     # Interview Assignment
-│   │   └── interview_results.py        # Interview Results
+│   │   ├── interview_assignment.py     # Interview Assignment with Recently Assigned view
+│   │   ├── interview_results.py        # Interview Results
+│   │   └── chatbot.py                  # AI Recruiter Assistant (Sidebar Component)
 │   │
 │   ├── User/                           # User screens
 │   │   ├── user.py                     # Dashboard
@@ -173,12 +197,15 @@ TalentFlow-AI/
 │   │   ├── auth_service.py
 │   │   ├── jd_service.py
 │   │   ├── resume_service.py
-│   │   ├── interview_service.py
-│   │   └── whisper_service.py          # Local Whisper integration
+│   │   ├── interview_service.py        # Enhanced with resume-based question generation
+│   │   ├── whisper_service.py          # Local Whisper integration
+│   │   └── tts_service.py              # Google Text-to-Speech integration
 │   │
 │   ├── uploads/                        # File uploads
 │   │   ├── jds/                        # Generated JD PDFs
-│   │   └── resumes/                    # Uploaded resumes
+│   │   ├── resumes/                    # Uploaded resumes (screening)
+│   │   ├── interview_resumes/          # Interview candidate resumes
+│   │   └── tts/                        # Generated audio files
 │   │
 │   ├── create_user.py                  # User creation utility
 │   └── main.py                         # FastAPI app entry point
@@ -223,16 +250,16 @@ TalentFlow AI uses a secure MongoDB-based authentication system:
 
 ### Prerequisites
 
-1. **Python 3.10+**
+1. **Python 3.10+** (with conda environment recommended)
 2. **MongoDB** (local or cloud)
 3. **Ollama** (for resume screening)
    ```bash
    # Install Ollama from https://ollama.ai
    ollama pull llama3.1:8b
    ```
-4. **Azure OpenAI Account** (for JD generation and interviews)
-5. **Azure Speech Services** (optional, for voice interviews)
-6. **NVIDIA GPU** (recommended for local Whisper)
+4. **Azure OpenAI Account** (required for JD generation, interviews, and chatbot)
+5. **Internet Connection** (for Google TTS and Azure OpenAI)
+6. **NVIDIA GPU** (optional, recommended for local Whisper voice features)
 
 ### Steps
 
@@ -255,6 +282,12 @@ TalentFlow AI uses a secure MongoDB-based authentication system:
 
 3. **Install dependencies**
    ```bash
+   # If using conda (recommended for avoiding environment issues)
+   conda create -n talentflow python=3.10
+   conda activate talentflow
+   pip install -r requirements.txt
+   
+   # Or using regular pip
    pip install -r requirements.txt
    ```
 
@@ -293,18 +326,13 @@ Edit the `.env` file with your credentials:
 MONGODB_URI=mongodb://localhost:27017
 DB_NAME=talentflow_db
 
-# Azure OpenAI
+# Azure OpenAI (Required for JD generation, interviews, and chatbot)
 AZURE_OPENAI_API_KEY=your_key_here
 AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-AZURE_OPENAI_API_VERSION=2024-02-01
+AZURE_OPENAI_API_VERSION=2024-12-01-preview
 AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=gpt-4o-mini
-AZURE_OPENAI_WHISPER_DEPLOYMENT_NAME=whisper-1
 
-# Azure Speech Services (optional)
-AZURE_SPEECH_KEY=your_key_here
-AZURE_SPEECH_REGION=eastus
-
-# Local Whisper Configuration
+# Local Whisper Configuration (Optional - for voice interviews)
 WHISPER_USE_LOCAL=true
 WHISPER_MODEL_SIZE=medium
 WHISPER_DEVICE=cuda
@@ -390,16 +418,25 @@ The frontend will be available at: `http://localhost:8501`
 
 4. **Assign Interviews**
    - Navigate to "Interview Assignment"
-   - Select JD
-   - Configure interview settings (number of questions)
+   - Select JD from your created job descriptions
+   - Enter candidate details (name and username/email)
+   - Configure interview settings (3-10 questions)
    - Click "Assign Interview"
    - **System automatically creates temporary user account**
    - Share the generated email and password with candidate
+   - **View Recently Assigned Interviews** section shows real-time status with color coding
 
-5. **View Results**
-   - Navigate to "Interview Results"
-   - Review completed interviews
-   - Analyze candidate performance
+5. **Use AI Assistant**
+   - **Chatbot available in sidebar** on all recruiter pages
+   - Ask questions about platform features
+   - Get step-by-step guidance for tasks
+   - Powered by Azure OpenAI for intelligent responses
+
+6. **View Results**
+   - Navigate to "Interview Results" 
+   - Review completed interviews with detailed evaluations
+   - Analyze candidate performance and AI recommendations
+   - Filter results by status and date
 
 ### Candidate (User) Workflow
 
@@ -415,9 +452,13 @@ The frontend will be available at: `http://localhost:8501`
 3. **Take Interview**
    - View assigned interviews on dashboard
    - Click "Start Interview"
-   - **Voice Interview**: Speak your answers (AI transcribes them)
-   - **Text Interview**: Type your answers
-   - View evaluation and final summary
+   - **Configure Preferences**: Choose Audio/Text modes for questions and responses
+   - **Upload Resume**: Required PDF upload before starting (for personalized questions)
+   - **Start Interview**: Questions are generated based on your resume + job description
+   - **Audio Mode**: Questions can be played as audio using "Play Question as Audio" button
+   - **Voice Responses**: Speak your answers (local Whisper transcribes them)
+   - **Text Responses**: Type your answers directly
+   - View real-time evaluation and detailed final summary with hiring recommendation
 
 ### Admin Workflow
 
@@ -449,19 +490,22 @@ The frontend will be available at: `http://localhost:8501`
 - **Cost**: Free (local processing)
 - **Privacy**: Audio never leaves your machine
 
-### Text-to-Speech (Azure Speech Services)
-- **Technology**: Azure Speech Services
+### Text-to-Speech (Google TTS)
+- **Technology**: Google Text-to-Speech (gTTS)
 - **Quality**: High-quality neural voices
-- **Languages**: Multiple language support
-- **Cost**: Pay-per-use
-- **Reliability**: Enterprise-grade service
+- **Languages**: Multiple language support including English
+- **Cost**: Free (cloud-based)
+- **Control**: Manual "Play Question as Audio" button for each question
 
 ### Voice Interview Flow
-1. **AI asks question** (text-to-speech)
-2. **Candidate speaks answer** (voice recording)
-3. **Audio transcribed** (local Whisper)
-4. **Answer evaluated** (Azure OpenAI)
-5. **Next question generated** (Azure OpenAI)
+1. **Resume Upload & Analysis** - Candidate uploads resume for personalized questions
+2. **AI generates personalized question** (Azure OpenAI + resume content + job description)
+3. **Question displayed as text** (always visible)
+4. **Optional audio playback** (user clicks "Play Question as Audio" button)
+5. **Candidate responds** (voice recording or text input)
+6. **Audio transcribed** (local Whisper if voice response)
+7. **Answer evaluated** (Azure OpenAI with detailed feedback)
+8. **Next personalized question generated** (based on resume, previous answers, interview progress)
 
 ---
 
@@ -492,15 +536,21 @@ The API documentation is automatically generated and available at:
 
 #### AI Interviews
 - `POST /api/interview/assign` - Assign interview (auto-creates temp user)
-- `POST /api/interview/{id}/start` - Start interview
+- `POST /api/interview/{id}/upload-resume` - Upload resume and set interview preferences
+- `POST /api/interview/{id}/start` - Start interview (with resume-based question generation)
 - `POST /api/interview/{id}/answer` - Submit answer
+- `GET /api/interview/{id}/details` - Get interview details and preferences
 - `POST /api/interview/transcribe` - Transcribe audio (local Whisper)
 - `GET /api/interview/{id}/status` - Get interview status
 - `GET /api/interview/{id}/summary` - Get interview summary
 - `GET /api/interview/user/{user_id}` - Get user's interviews
+- `GET /api/interview/recruiter/{recruiter_id}/assigned` - Get assigned interviews by recruiter
+- `GET /api/interview/recruiter/{recruiter_id}/results` - Get completed interview results
 
-#### Whisper Service
-- `GET /api/whisper/health` - Check Whisper service status
+#### Voice Services
+- `GET /api/interview/whisper/health` - Check Whisper service status
+- `GET /api/interview/tts/health` - Check Google TTS service status
+- `POST /api/interview/tts/generate` - Generate speech from text
 
 ---
 
@@ -555,9 +605,10 @@ open http://localhost:8000/docs
    - Ensure Ollama service is running
 
 4. **Azure OpenAI Errors**
-   - Verify API key and endpoint
-   - Check deployment names
-   - Ensure quota is not exceeded
+   - Verify API key and endpoint in .env file
+   - Check deployment name (without quotes): `AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=gpt-4o-mini`
+   - Ensure deployment exists in Azure Portal
+   - Check API version is supported
 
 5. **Whisper Not Working**
    - Ensure NVIDIA GPU is available
@@ -565,11 +616,23 @@ open http://localhost:8000/docs
    - Verify faster-whisper installation
    - Check GPU memory availability
 
-6. **Voice Features Not Working**
-   - Check microphone permissions
-   - Verify audio drivers
-   - Test Azure Speech Services credentials
-   - Check network connectivity for TTS
+6. **TTS (Audio Questions) Not Working**
+   - Install gTTS: `pip install gTTS`
+   - Ensure backend is running in correct conda environment
+   - Check network connectivity (gTTS requires internet)
+   - Click "Play Question as Audio" button to generate audio
+
+7. **Chatbot Not Responding**
+   - Check Azure OpenAI configuration
+   - Verify deployment name is correct (no quotes in .env)
+   - Check backend logs for LLM initialization errors
+   - Ensure .env file is loaded from project root
+
+8. **Resume Upload Issues**
+   - Ensure file is PDF format
+   - Check file size (must be < 10MB)
+   - Verify uploads directory exists and is writable
+   - Resume is required before starting interview
 
 ### Debug Tools
 - **Admin Debug Page**: Navigate to "Debug Config" in admin sidebar
@@ -606,16 +669,31 @@ For issues, questions, or suggestions:
 
 ## 🎉 Acknowledgments
 
-- Azure OpenAI for powerful AI capabilities
-- Ollama for local LLM support
-- OpenAI Whisper for speech recognition
-- Azure Speech Services for text-to-speech
-- Streamlit for the amazing frontend framework
-- FastAPI for the robust backend framework
-- MongoDB for flexible data storage
+- **Azure OpenAI** for powerful GPT-4o-mini capabilities powering JD generation, interviews, and chatbot
+- **Google** for free, high-quality Text-to-Speech (gTTS) service
+- **Ollama** for local LLM support enabling resume screening
+- **OpenAI Whisper** for accurate speech recognition
+- **Streamlit** for the amazing frontend framework enabling rapid UI development
+- **FastAPI** for the robust, high-performance backend framework
+- **MongoDB** for flexible document-based data storage
+- **LangChain** for AI workflow orchestration and prompt management
 
 ---
 
 **Built with ❤️ for modern HR teams**
 
-*Featuring advanced AI, voice processing, and seamless user experience*
+*Featuring personalized AI interviews, intelligent recruiter assistance, voice processing, and seamless user experience*
+
+---
+
+## 🆕 Latest Updates
+
+### v2.0 - Enhanced Interview Experience
+- ✅ **Resume-Based Personalization** - Questions generated from candidate's resume + JD
+- ✅ **Interview Preferences** - Audio/Text mode selection for both interviewer and candidate
+- ✅ **AI Recruiter Assistant** - Sidebar chatbot powered by Azure OpenAI
+- ✅ **Recently Assigned Interviews** - Real-time tracking with color-coded status
+- ✅ **Google TTS Integration** - Free, high-quality text-to-speech for questions
+- ✅ **Manual Audio Control** - User-controlled question playback
+- ✅ **Enhanced UI** - Better interview flow and user experience
+- ✅ **Improved Error Handling** - Better diagnostics and user feedback

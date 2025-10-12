@@ -53,6 +53,10 @@ class InterviewInDB(BaseModel):
     evaluations: List[Dict] = Field(default_factory=list)
     final_summary: Optional[Dict] = None
     max_questions: int = Field(default=5)
+    interviewer_mode: Literal["Audio", "Text"] = Field(default="Text", description="How the interviewer presents questions")
+    user_mode: Literal["Audio", "Text"] = Field(default="Text", description="How the user responds")
+    resume_path: Optional[str] = Field(None, description="Path to uploaded resume")
+    resume_content: Optional[str] = Field(None, description="Extracted resume text")
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)

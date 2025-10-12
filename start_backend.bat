@@ -1,12 +1,6 @@
 @echo off
-echo ====================================
-echo TalentFlow AI - Starting Backend
-echo ====================================
-echo.
-
-echo Starting FastAPI server...
-cd Backend
-python main.py
-
+echo Starting TalentFlow AI Backend in uday environment...
+call conda activate uday
+python Backend/main.py
 pause
 

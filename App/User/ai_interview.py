@@ -30,9 +30,16 @@ try:
         st.write(f"**Status:** {status_data['status']}")
         
         # Progress bar
-        progress = status_data['questions_completed'] / status_data['total_questions']
-        st.progress(progress)
-        st.write(f"Question {status_data['questions_completed'] + 1} of {status_data['total_questions']}")
+        if status_data['total_questions'] > 0:
+            progress = status_data['questions_completed'] / status_data['total_questions']
+            st.progress(progress)
+            
+            # Show current question number only if interview is in progress
+            if status_data['status'] == 'In Progress':
+                current_question_num = status_data['questions_completed'] + 1
+                st.write(f"Question {current_question_num} of {status_data['total_questions']}")
+            else:
+                st.write(f"Questions Completed: {status_data['questions_completed']} of {status_data['total_questions']}")
         
         st.divider()
         
@@ -94,24 +101,96 @@ try:
             
         # If interview is assigned but not started
         elif status_data['status'] == 'Assigned':
-            st.info("This interview has not been started yet.")
+            st.info("📋 Please configure your interview preferences and upload your resume before starting.")
             
-            if st.button("🚀 Start Interview", type="primary", use_container_width=True):
-                with st.spinner("Starting interview..."):
-                    try:
-                        start_response = requests.post(
-                            f"{API_BASE_URL}/interview/{interview_id}/start",
-                            timeout=10
-                        )
-                        
-                        if start_response.status_code == 200:
-                            st.success("✅ Interview started!")
-                            st.rerun()
-                        else:
-                            st.error(f"Error starting interview: {start_response.json().get('detail', 'Unknown error')}")
+            st.divider()
+            
+            # Interview Configuration Section
+            st.subheader("⚙️ Interview Configuration")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("##### Interviewer Communication")
+                interviewer_mode = st.radio(
+                    "How would you like to receive questions?",
+                    options=["Text", "Audio"],
+                    index=0,
+                    help="Choose how the interviewer will present questions to you",
+                    key="interviewer_mode"
+                )
+            
+            with col2:
+                st.markdown("##### Your Response Method")
+                user_mode = st.radio(
+                    "How would you like to respond?",
+                    options=["Text", "Audio"],
+                    index=0,
+                    help="Choose how you want to provide your answers",
+                    key="user_mode"
+                )
+            
+            st.divider()
+            
+            # Resume Upload Section
+            st.subheader("📄 Upload Your Resume")
+            st.markdown("Upload your resume so we can ask personalized questions based on your experience.")
+            
+            uploaded_resume = st.file_uploader(
+                "Choose your resume (PDF)",
+                type=["pdf"],
+                help="Upload your resume in PDF format",
+                key="resume_upload"
+            )
+            
+            if uploaded_resume:
+                st.success(f"✅ Resume uploaded: {uploaded_resume.name}")
+            
+            st.divider()
+            
+            # Start button
+            if st.button("🚀 Start Interview", type="primary", use_container_width=True, disabled=not uploaded_resume):
+                if not uploaded_resume:
+                    st.error("❌ Please upload your resume before starting the interview.")
+                else:
+                    with st.spinner("Uploading resume and starting interview..."):
+                        try:
+                            # First upload the resume
+                            files = {"resume_file": (uploaded_resume.name, uploaded_resume.getvalue(), "application/pdf")}
+                            data = {
+                                "interviewer_mode": interviewer_mode,
+                                "user_mode": user_mode
+                            }
                             
-                    except requests.exceptions.RequestException as e:
-                        st.error(f"Error: {str(e)}")
+                            upload_response = requests.post(
+                                f"{API_BASE_URL}/interview/{interview_id}/upload-resume",
+                                files=files,
+                                data=data,
+                                timeout=30
+                            )
+                            
+                            if upload_response.status_code == 200:
+                                st.success("✅ Resume uploaded successfully!")
+                                
+                                # Now start the interview
+                                start_response = requests.post(
+                                    f"{API_BASE_URL}/interview/{interview_id}/start",
+                                    timeout=10
+                                )
+                                
+                                if start_response.status_code == 200:
+                                    st.success("✅ Interview started!")
+                                    st.rerun()
+                                else:
+                                    st.error(f"Error starting interview: {start_response.json().get('detail', 'Unknown error')}")
+                            else:
+                                st.error(f"Error uploading resume: {upload_response.json().get('detail', 'Unknown error')}")
+                                
+                        except requests.exceptions.RequestException as e:
+                            st.error(f"Error: {str(e)}")
+            
+            if not uploaded_resume:
+                st.warning("⚠️ Please upload your resume to enable the Start Interview button.")
         
         # If interview is in progress
         elif status_data['status'] == 'In Progress':
@@ -119,13 +198,80 @@ try:
             
             if current_question:
                 st.subheader("Current Question")
+                
+                # Get interview details to check mode
+                interview_details_response = requests.get(
+                    f"{API_BASE_URL}/interview/{interview_id}/details",
+                    timeout=5
+                )
+                
+                interviewer_mode = "Text"
+                user_mode = "Text"
+                
+                if interview_details_response.status_code == 200:
+                    interview_details = interview_details_response.json()
+                    interviewer_mode = interview_details.get('interviewer_mode', 'Text')
+                    user_mode = interview_details.get('user_mode', 'Text')
+                
+                # Display question text
                 st.info(current_question)
+                
+                # Always show "Play Audio" button (works regardless of mode)
+                st.markdown("---")
+                col_audio, col_space = st.columns([1, 3])
+                with col_audio:
+                    if st.button("🔊 Play Question as Audio", type="secondary", use_container_width=True):
+                        with st.spinner("Generating audio..."):
+                            try:
+                                tts_response = requests.post(
+                                    f"{API_BASE_URL}/interview/tts/generate",
+                                    params={"text": current_question},
+                                    timeout=30
+                                )
+                                
+                                if tts_response.status_code == 200:
+                                    tts_data = tts_response.json()
+                                    audio_path = tts_data.get('audio_path')
+                                    
+                                    # Display audio player
+                                    audio_url = f"http://localhost:8000/{audio_path}"
+                                    st.audio(audio_url, format='audio/mp3', autoplay=True)
+                                    st.success("✅ Audio playing!")
+                                else:
+                                    error_detail = tts_response.json().get('detail', 'Unknown error')
+                                    st.error(f"❌ Could not generate audio: {error_detail}")
+                                    
+                            except Exception as e:
+                                st.error(f"❌ Audio generation error: {str(e)}")
+                
+                st.markdown("---")
+                
+                # Show mode indicators
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.caption(f"📢 Interviewer: {interviewer_mode}")
+                with col2:
+                    st.caption(f"🎤 Your Response: {user_mode}")
             
-            # Answer form - Voice or Text
+            # Answer form - Voice or Text based on user preference
             st.subheader("📝 Provide Your Answer")
             
-            # Tab selection for input method
-            input_tab1, input_tab2 = st.tabs(["✍️ Type Answer", "🎙️ Voice Answer"])
+            # Get interview details to check user mode
+            interview_details_response = requests.get(
+                f"{API_BASE_URL}/interview/{interview_id}/details",
+                timeout=5
+            )
+            
+            user_mode = "Text"
+            if interview_details_response.status_code == 200:
+                interview_details = interview_details_response.json()
+                user_mode = interview_details.get('user_mode', 'Text')
+            
+            # Tab selection for input method - default based on user_mode
+            if user_mode == "Audio":
+                input_tab2, input_tab1 = st.tabs(["🎙️ Voice Answer (Preferred)", "✍️ Type Answer"])
+            else:
+                input_tab1, input_tab2 = st.tabs(["✍️ Type Answer (Preferred)", "🎙️ Voice Answer"])
             
             answer_text = ""
             

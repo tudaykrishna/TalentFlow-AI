@@ -1,5 +1,6 @@
 """AI Interview Service"""
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from langchain_openai import AzureChatOpenAI
 from langchain_core.prompts import PromptTemplate
@@ -8,8 +9,14 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, TypedDict, Optional, Literal
 import logging
 
-# Force reload environment variables (override=True ensures we get latest .env)
-load_dotenv(override=True)
+# Load .env from project root
+project_root = Path(__file__).resolve().parent.parent.parent
+env_path = project_root / ".env"
+if env_path.exists():
+    load_dotenv(env_path, override=True)
+else:
+    load_dotenv(override=True)
+
 logger = logging.getLogger(__name__)
 
 # Pydantic Models for Structured Output
@@ -70,12 +77,13 @@ class InterviewerService:
             logger.error(f"❌ Failed to initialize Interview Service: {e}")
             raise
 
-    async def generate_interview_plan(self, job_description: str) -> List[str]:
+    async def generate_interview_plan(self, job_description: str, resume_content: str = None) -> List[str]:
         """
-        Generate interview plan based on job description
+        Generate interview plan based on job description and resume
         
         Args:
             job_description: The job description text
+            resume_content: The candidate's resume text (optional)
             
         Returns:
             List of topics to cover in the interview
@@ -84,22 +92,49 @@ class InterviewerService:
             logger.info("Generating interview plan")
             parser = PydanticOutputParser(pydantic_object=InterviewPlan)
 
-            template = """
-            You are a senior hiring manager. Read the job description and generate a list of 5 key topics to discuss.
+            if resume_content:
+                template = """
+                You are a senior hiring manager. Read the job description and the candidate's resume to generate a list of 5 key topics to discuss in the interview.
+                
+                Focus on:
+                1. Skills and experience mentioned in both the JD and resume
+                2. Projects and achievements from the resume that relate to the job
+                3. Any gaps or areas that need clarification
+                4. Technical and behavioral competencies required for the role
 
-            You MUST format your output as a JSON object with a single key "topics".
+                You MUST format your output as a JSON object with a single key "topics".
 
-            Example Format:
-            {{
-              "topics": ["Python fundamentals", "FastAPI experience", "Database knowledge", "Team collaboration", "Problem-solving skills"]
-            }}
+                Example Format:
+                {{
+                  "topics": ["Python and FastAPI experience from ProjectX", "Machine learning skills mentioned in resume", "Team leadership in previous role", "Database architecture decisions", "Problem-solving approach"]
+                }}
 
-            Job Description:
-            {jd}
-            """
-            prompt = PromptTemplate(template=template, input_variables=["jd"])
-            chain = prompt | self.llm | parser
-            plan = chain.invoke({"jd": job_description})
+                Job Description:
+                {jd}
+                
+                Candidate's Resume:
+                {resume}
+                """
+                prompt = PromptTemplate(template=template, input_variables=["jd", "resume"])
+                chain = prompt | self.llm | parser
+                plan = chain.invoke({"jd": job_description, "resume": resume_content})
+            else:
+                template = """
+                You are a senior hiring manager. Read the job description and generate a list of 5 key topics to discuss.
+
+                You MUST format your output as a JSON object with a single key "topics".
+
+                Example Format:
+                {{
+                  "topics": ["Python fundamentals", "FastAPI experience", "Database knowledge", "Team collaboration", "Problem-solving skills"]
+                }}
+
+                Job Description:
+                {jd}
+                """
+                prompt = PromptTemplate(template=template, input_variables=["jd"])
+                chain = prompt | self.llm | parser
+                plan = chain.invoke({"jd": job_description})
             
             logger.info(f"✅ Interview plan generated with {len(plan.topics)} topics")
             return plan.topics
@@ -111,7 +146,8 @@ class InterviewerService:
     async def generate_question(self, 
                                interview_plan: List[str],
                                conversation_history: List[Dict],
-                               evaluations: List[Dict]) -> str:
+                               evaluations: List[Dict],
+                               resume_content: str = None) -> str:
         """
         Generate the next interview question
         
@@ -119,6 +155,7 @@ class InterviewerService:
             interview_plan: List of topics to cover
             conversation_history: Previous Q&A pairs
             evaluations: Previous evaluations
+            resume_content: The candidate's resume text (optional)
             
         Returns:
             The next question to ask
@@ -132,24 +169,53 @@ class InterviewerService:
             else:
                 next_topic = interview_plan[len(evaluations)] if len(evaluations) < len(interview_plan) else "a final concluding question"
                 instruction += f"Based on the interview plan, ask the next question about the topic: '{next_topic}'."
+            
+            if resume_content:
+                instruction += " Reference specific projects, skills, or experiences from the candidate's resume when asking the question to make it personalized and relevant."
                 
             parser = PydanticOutputParser(pydantic_object=Question)
-            template = """
-            {instruction}
+            
+            if resume_content:
+                template = """
+                {instruction}
 
-            You MUST format your output as a JSON object with a single key "question".
+                You MUST format your output as a JSON object with a single key "question".
 
-            Example Format:
-            {{
-                "question": "Can you describe a challenging project you worked on using FastAPI?"
-            }}
+                Example Format:
+                {{
+                    "question": "I noticed you worked on ProjectX with FastAPI. Can you describe the challenges you faced with API performance?"
+                }}
 
-            Conversation History:
-            {history}
-            """
-            prompt = PromptTemplate(template=template, input_variables=["instruction", "history"])
-            chain = prompt | self.llm | parser
-            question_obj = chain.invoke({"instruction": instruction, "history": conversation_history})
+                Candidate's Resume Summary:
+                {resume}
+
+                Conversation History:
+                {history}
+                """
+                prompt = PromptTemplate(template=template, input_variables=["instruction", "resume", "history"])
+                chain = prompt | self.llm | parser
+                question_obj = chain.invoke({
+                    "instruction": instruction, 
+                    "resume": resume_content[:2000],  # Limit resume length to avoid token limits
+                    "history": conversation_history
+                })
+            else:
+                template = """
+                {instruction}
+
+                You MUST format your output as a JSON object with a single key "question".
+
+                Example Format:
+                {{
+                    "question": "Can you describe a challenging project you worked on using FastAPI?"
+                }}
+
+                Conversation History:
+                {history}
+                """
+                prompt = PromptTemplate(template=template, input_variables=["instruction", "history"])
+                chain = prompt | self.llm | parser
+                question_obj = chain.invoke({"instruction": instruction, "history": conversation_history})
             
             logger.info("✅ Question generated successfully")
             return question_obj.question

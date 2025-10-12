@@ -44,6 +44,9 @@ scipy==1.15.1
 playsound==1.2.2
 numpy==1.26.4  # Compatible with scipy and sounddevice
 
+# === Text-to-Speech ===
+gTTS==2.5.0  # Google Text-to-Speech
+
 # === Local Whisper (GPU-Accelerated Transcription) ===
 faster-whisper==1.2.0
 torch==2.8.0

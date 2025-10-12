@@ -8,6 +8,7 @@ from models.interview_model import (
 from services.interview_service import interview_service
 from services.auth_service import AuthService
 from services.whisper_service import whisper_service
+from services.tts_service import tts_service
 from db.mongodb import get_database
 from datetime import datetime
 from bson import ObjectId
@@ -115,6 +116,87 @@ async def assign_interview(
             detail=f"Failed to assign interview: {str(e)}"
         )
 
+@router.post("/{interview_id}/upload-resume")
+async def upload_resume(
+    interview_id: str,
+    resume_file: UploadFile = File(...),
+    interviewer_mode: str = "Text",
+    user_mode: str = "Text",
+    db = Depends(get_database)
+):
+    """
+    Upload resume and set interview preferences before starting
+    
+    - **interview_id**: Interview ID
+    - **resume_file**: Resume PDF file
+    - **interviewer_mode**: How interviewer presents questions (Audio/Text)
+    - **user_mode**: How user responds (Audio/Text)
+    """
+    try:
+        # Get interview
+        interview = await db["interviews"].find_one({"_id": ObjectId(interview_id)})
+        if not interview:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Interview not found"
+            )
+        
+        if interview["status"] != "Assigned":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Interview is already {interview['status']}"
+            )
+        
+        # Read resume content
+        resume_content = await resume_file.read()
+        
+        # Save resume file
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        filename = f"resume_{interview['candidate_name'].replace(' ', '_')}_{timestamp}.pdf"
+        resume_dir = "Backend/uploads/interview_resumes"
+        os.makedirs(resume_dir, exist_ok=True)
+        resume_path = os.path.join(resume_dir, filename)
+        
+        with open(resume_path, "wb") as f:
+            f.write(resume_content)
+        
+        # Extract text from resume using resume service
+        from services.resume_service import resume_screener_service
+        resume_text = resume_screener_service.extract_text_from_pdf(resume_content)
+        
+        # Update interview with resume and preferences
+        await db["interviews"].update_one(
+            {"_id": ObjectId(interview_id)},
+            {
+                "$set": {
+                    "resume_path": resume_path,
+                    "resume_content": resume_text,
+                    "interviewer_mode": interviewer_mode,
+                    "user_mode": user_mode,
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
+        
+        logger.info(f"✅ Resume uploaded for interview {interview_id}")
+        
+        return {
+            "interview_id": interview_id,
+            "resume_uploaded": True,
+            "interviewer_mode": interviewer_mode,
+            "user_mode": user_mode,
+            "message": "Resume uploaded successfully. You can now start the interview."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error uploading resume: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload resume: {str(e)}"
+        )
+
 @router.post("/{interview_id}/start")
 async def start_interview(interview_id: str, db = Depends(get_database)):
     """Start an interview and generate the interview plan"""
@@ -137,15 +219,25 @@ async def start_interview(interview_id: str, db = Depends(get_database)):
         jd = await db["jds"].find_one({"_id": ObjectId(interview["jd_id"])})
         job_description = jd.get("generated_content", "")
         
+        # Get resume content if available
+        resume_content = interview.get("resume_content")
+        
         # Generate interview plan
-        interview_plan = await interview_service.generate_interview_plan(job_description)
+        interview_plan = await interview_service.generate_interview_plan(
+            job_description, 
+            resume_content=resume_content
+        )
         
         # Generate first question
         first_question = await interview_service.generate_question(
             interview_plan=interview_plan,
             conversation_history=[],
-            evaluations=[]
+            evaluations=[],
+            resume_content=resume_content
         )
+        
+        # Initialize conversation history with first question
+        initial_conversation = [{"question": first_question, "answer": None}]
         
         # Update interview
         await db["interviews"].update_one(
@@ -154,6 +246,7 @@ async def start_interview(interview_id: str, db = Depends(get_database)):
                 "$set": {
                     "status": "In Progress",
                     "interview_plan": interview_plan,
+                    "conversation_history": initial_conversation,
                     "started_at": datetime.utcnow(),
                     "updated_at": datetime.utcnow()
                 }
@@ -197,28 +290,26 @@ async def submit_answer(interview_id: str, answer: str, db = Depends(get_databas
                 detail="Interview is not in progress"
             )
         
-        # Get current question from conversation history or generate first one
+        # Get current question from conversation history
         conversation_history = interview.get("conversation_history", [])
         evaluations = interview.get("evaluations", [])
         interview_plan = interview.get("interview_plan", [])
+        resume_content = interview.get("resume_content")
         
-        # Determine current question
-        if len(evaluations) < len(conversation_history):
+        # Determine current question - it should be the last unanswered one
+        if len(conversation_history) > len(evaluations):
             # There's an unanswered question
             current_question = conversation_history[-1]["question"]
+            # Update the answer in conversation history
+            conversation_history[-1]["answer"] = answer
         else:
-            # Generate next question
-            current_question = await interview_service.generate_question(
-                interview_plan=interview_plan,
-                conversation_history=conversation_history,
-                evaluations=evaluations
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No pending question found"
             )
         
         # Evaluate answer
         evaluation = await interview_service.evaluate_answer(current_question, answer)
-        
-        # Add to conversation history and evaluations
-        conversation_history.append({"question": current_question, "answer": answer})
         evaluations.append(evaluation)
         
         # Check if interview is complete
@@ -264,8 +355,12 @@ async def submit_answer(interview_id: str, answer: str, db = Depends(get_databas
             next_question = await interview_service.generate_question(
                 interview_plan=interview_plan,
                 conversation_history=conversation_history,
-                evaluations=evaluations
+                evaluations=evaluations,
+                resume_content=resume_content
             )
+            
+            # Add next question to conversation history
+            conversation_history.append({"question": next_question, "answer": None})
             
             # Update interview
             await db["interviews"].update_one(
@@ -295,6 +390,34 @@ async def submit_answer(interview_id: str, answer: str, db = Depends(get_databas
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to submit answer: {str(e)}"
+        )
+
+@router.get("/{interview_id}/details")
+async def get_interview_details(interview_id: str, db = Depends(get_database)):
+    """Get interview details including preferences and modes"""
+    try:
+        interview = await db["interviews"].find_one({"_id": ObjectId(interview_id)})
+        if not interview:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Interview not found"
+            )
+        
+        return {
+            "interview_id": interview_id,
+            "interviewer_mode": interview.get("interviewer_mode", "Text"),
+            "user_mode": interview.get("user_mode", "Text"),
+            "resume_uploaded": interview.get("resume_path") is not None,
+            "status": interview["status"]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error getting interview details: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get interview details: {str(e)}"
         )
 
 @router.get("/{interview_id}/status", response_model=InterviewStatusResponse)
@@ -473,6 +596,90 @@ async def whisper_health_check():
             "status": "error",
             "error": str(e)
         }
+
+@router.get("/tts/health")
+async def tts_health_check():
+    """Check Google TTS service health"""
+    try:
+        status_info = tts_service.get_status()
+        return {
+            "service": "Google TTS",
+            "status": "available" if status_info["available"] else "unavailable",
+            **status_info
+        }
+    except Exception as e:
+        logger.error(f"Error checking TTS health: {e}")
+        return {"service": "Google TTS", "status": "error", "error": str(e)}
+
+@router.post("/tts/generate")
+async def generate_speech(text: str):
+    """Generate speech from text using Google TTS"""
+    try:
+        if not tts_service.is_available():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Google TTS not available. Run: pip install gTTS"
+            )
+        
+        audio_path = await tts_service.text_to_speech(text)
+        relative_path = audio_path  # Already in correct format
+        
+        return {
+            "audio_path": relative_path,
+            "text": text,
+            "service": "Google TTS",
+            "status": "success"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ TTS generation failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate speech: {str(e)}"
+        )
+
+@router.get("/recruiter/{recruiter_id}/assigned")
+async def get_recruiter_assigned_interviews(recruiter_id: str, db = Depends(get_database)):
+    """Get all interviews assigned by a recruiter (all statuses)"""
+    try:
+        # Fetch all interviews assigned by this recruiter
+        cursor = db["interviews"].find({
+            "recruiter_id": recruiter_id
+        }).sort("created_at", -1)
+        
+        interviews = await cursor.to_list(length=100)
+        
+        results = []
+        for interview in interviews:
+            # Get JD details
+            jd = await db["jds"].find_one({"_id": ObjectId(interview["jd_id"])})
+            
+            # Calculate progress
+            evaluations = interview.get("evaluations", [])
+            
+            results.append({
+                "interview_id": str(interview["_id"]),
+                "candidate_name": interview.get("candidate_name", "Unknown"),
+                "candidate_username": interview.get("candidate_username", "N/A"),
+                "job_title": jd.get("job_title", "Unknown") if jd else "Unknown",
+                "status": interview["status"],
+                "questions_completed": len(evaluations),
+                "max_questions": interview.get("max_questions", 5),
+                "created_at": interview.get("created_at"),
+                "started_at": interview.get("started_at"),
+                "completed_at": interview.get("completed_at")
+            })
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"❌ Error retrieving assigned interviews: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve assigned interviews: {str(e)}"
+        )
 
 @router.get("/recruiter/{recruiter_id}/results")
 async def get_recruiter_interview_results(recruiter_id: str, db = Depends(get_database)):

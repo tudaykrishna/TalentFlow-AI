@@ -1,5 +1,6 @@
 """Job Description Generator Service"""
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from langchain.prompts import PromptTemplate
 from langchain_openai import AzureChatOpenAI
@@ -7,8 +8,14 @@ from fpdf import FPDF
 import logging
 from datetime import datetime
 
-# Force reload environment variables (override=True ensures we get latest .env)
-load_dotenv(override=True)
+# Load .env from project root
+project_root = Path(__file__).resolve().parent.parent.parent
+env_path = project_root / ".env"
+if env_path.exists():
+    load_dotenv(env_path, override=True)
+else:
+    load_dotenv(override=True)
+
 logger = logging.getLogger(__name__)
 
 class JDGeneratorService:
