@@ -19,8 +19,8 @@ async def create_default_recruiter():
     
     # Default recruiter credentials
     username = "recruiter"
-    email = "udayt2003@gmail.com"
-    password = "Uday@186186"
+    email = "xxx"
+    password = "xxx"
     role = "recruiter"
     
     # Connect to MongoDB
