@@ -81,7 +81,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    command: ["python", "-u", "main.py"]
+    command: ["./startup.sh"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -132,7 +132,7 @@ services:
         condition: service_healthy
     networks:
       - talentflow-dev-network
-    command: ["python", "-u", "main.py"]
+    command: ["./startup.sh"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s

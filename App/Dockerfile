@@ -18,16 +18,11 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements from root
-COPY requirements.txt .
+# Copy frontend requirements
+COPY App/requirements.txt .
 
-# Install Python dependencies (only frontend-related packages)
-RUN pip install --no-cache-dir \
-    streamlit==1.42.0 \
-    requests==2.32.3 \
-    pandas==2.2.3 \
-    audio-recorder-streamlit==0.0.10 \
-    Authlib==1.3.2
+# Install frontend Python dependencies only
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy App application code
 COPY App/ /app/App/

@@ -30,8 +30,8 @@ RUN ln -sf /usr/bin/python3.10 /usr/bin/python
 # Set working directory
 WORKDIR /app
 
-# Copy requirements from root
-COPY requirements.txt .
+# Copy backend requirements
+COPY Backend/requirements.txt .
 
 # Upgrade pip and install Python dependencies
 RUN python -m pip install --upgrade pip
@@ -54,6 +54,9 @@ WORKDIR /app/Backend
 # Create uploads directory
 RUN mkdir -p uploads/resumes uploads/jds uploads/tts Backend/uploads/interview_resumes
 
+# Make startup script executable
+RUN chmod +x startup.sh
+
 # Set environment variables for GPU usage
 ENV WHISPER_USE_LOCAL=true
 ENV WHISPER_MODEL_SIZE=medium
@@ -68,5 +71,5 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
 # Expose port
 EXPOSE 8000
 
-# Start the application
-CMD ["python", "main.py"]
+# Start the application with user creation
+CMD ["./startup.sh"]
