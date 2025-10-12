@@ -1,0 +1,205 @@
+# =============================================
+# TalentFlow AI - Production Docker Compose
+# Supports both GPU and CPU modes
+# =============================================
+
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7-jammy
+    container_name: talentflow-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: talentflow_db
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - talentflow-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Backend API Service - GPU Profile
+  backend:
+    profiles: ["gpu"]
+    build:
+      context: .
+      dockerfile: Backend/Dockerfile.gpu
+    container_name: talentflow-backend
+    restart: unless-stopped
+    working_dir: /app/Backend
+    ports:
+      - "8000:8000"
+    environment:
+      # MongoDB
+      - MONGODB_URI=mongodb://mongodb:27017/talentflow_db
+      - DB_NAME=talentflow_db
+      
+      # Azure OpenAI (Required)
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=${AZURE_OPENAI_CHAT_DEPLOYMENT_NAME}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      
+      # Whisper GPU Configuration (can be overridden by .env)
+      - WHISPER_USE_LOCAL=${WHISPER_USE_LOCAL:-true}
+      - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-medium}
+      - WHISPER_DEVICE=${WHISPER_DEVICE:-cuda}
+      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-float16}
+      
+      # GPU Settings
+      - CUDA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    volumes:
+      - backend_uploads:/app/Backend/uploads
+      - ./Backend/uploads:/app/Backend/uploads
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - talentflow-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Backend API Service - CPU Profile
+  backend-cpu:
+    profiles: ["cpu"]
+    build:
+      context: .
+      dockerfile: Backend/Dockerfile.cpu
+    container_name: talentflow-backend
+    restart: unless-stopped
+    working_dir: /app/Backend
+    ports:
+      - "8000:8000"
+    environment:
+      # MongoDB
+      - MONGODB_URI=mongodb://mongodb:27017/talentflow_db
+      - DB_NAME=talentflow_db
+      
+      # Azure OpenAI (Required)
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=${AZURE_OPENAI_CHAT_DEPLOYMENT_NAME}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      
+      # Whisper CPU Configuration (can be overridden by .env)
+      - WHISPER_USE_LOCAL=${WHISPER_USE_LOCAL:-true}
+      - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-base}
+      - WHISPER_DEVICE=${WHISPER_DEVICE:-cpu}
+      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8}
+    volumes:
+      - backend_uploads:/app/Backend/uploads
+      - ./Backend/uploads:/app/Backend/uploads
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - talentflow-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Frontend Streamlit Service
+  frontend:
+    build:
+      context: .
+      dockerfile: App/Dockerfile
+    container_name: talentflow-frontend
+    restart: unless-stopped
+    working_dir: /app/App
+    ports:
+      - "8501:8501"
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      # API Configuration for Docker networking
+      - API_HOST=backend-cpu
+      - API_PORT=8000
+    depends_on:
+      - mongodb
+    networks:
+      - talentflow-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+# Networks
+networks:
+  talentflow-network:
+    driver: bridge
+    name: talentflow-network
+
+# Volumes
+volumes:
+  mongodb_data:
+    driver: local
+    name: talentflow-mongodb-data
+  mongodb_config:
+    driver: local
+    name: talentflow-mongodb-config
+  backend_uploads:
+    driver: local
+    name: talentflow-backend-uploads
+
+# =============================================
+# Usage Instructions:
+# =============================================
+# 
+# GPU Mode:
+#   docker compose --profile gpu up -d
+#   - Uses NVIDIA CUDA base image (~10.5 GB)
+#   - Requires NVIDIA Container Toolkit
+#   - Fast Whisper transcription with medium model
+# 
+# CPU Mode:
+#   docker compose --profile cpu up -d
+#   - Uses Python slim image (~2.5 GB)
+#   - No GPU required
+#   - Slower Whisper transcription with base model
+# 
+# View logs:
+#   docker compose logs -f
+# 
+# Stop services:
+#   docker compose --profile gpu down
+#   or
+#   docker compose --profile cpu down
+# 
+# Rebuild:
+#   docker compose --profile gpu up --build -d
+#   docker compose --profile cpu up --build -d
+#
+# Services available at:
+# - Frontend: http://localhost:8501
+# - Backend API: http://localhost:8000
+# - API Docs: http://localhost:8000/docs
+# - MongoDB: localhost:27017
+# =============================================

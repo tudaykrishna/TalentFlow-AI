@@ -1,0 +1,225 @@
+# =============================================
+# TalentFlow AI - Development Docker Compose
+# Supports both GPU and CPU modes with Hot-Reload
+# =============================================
+
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7-jammy
+    container_name: talentflow-mongodb-dev
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: talentflow_dev_db
+    volumes:
+      - mongodb_dev_data:/data/db
+    networks:
+      - talentflow-dev-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Backend API Service - GPU Profile (Development with Hot-Reload)
+  backend-dev:
+    profiles: ["gpu"]
+    build:
+      context: .
+      dockerfile: Backend/Dockerfile.gpu
+    container_name: talentflow-backend-dev
+    restart: unless-stopped
+    working_dir: /app/Backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Development settings
+      - ENV=development
+      - DEBUG=true
+      
+      # MongoDB
+      - MONGODB_URI=mongodb://mongodb:27017/talentflow_dev_db
+      - DB_NAME=talentflow_dev_db
+      
+      # Azure OpenAI (Required)
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=${AZURE_OPENAI_CHAT_DEPLOYMENT_NAME}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      
+      # Whisper GPU Configuration (can be overridden by .env)
+      - WHISPER_USE_LOCAL=${WHISPER_USE_LOCAL:-true}
+      - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-medium}
+      - WHISPER_DEVICE=${WHISPER_DEVICE:-cuda}
+      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-float16}
+      
+      # GPU Settings
+      - CUDA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    volumes:
+      # Hot-reload: Mount source code for live changes
+      - ./Backend:/app/Backend
+      - backend_dev_uploads:/app/Backend/uploads
+      # Exclude Python cache and model cache from host
+      - /app/Backend/__pycache__
+      - /app/Backend/**/__pycache__
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - talentflow-dev-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: ["python", "-u", "main.py"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Backend API Service - CPU Profile (Development with Hot-Reload)
+  backend-dev-cpu:
+    profiles: ["cpu"]
+    build:
+      context: .
+      dockerfile: Backend/Dockerfile.cpu
+    container_name: talentflow-backend-dev
+    restart: unless-stopped
+    working_dir: /app/Backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Development settings
+      - ENV=development
+      - DEBUG=true
+      
+      # MongoDB
+      - MONGODB_URI=mongodb://mongodb:27017/talentflow_dev_db
+      - DB_NAME=talentflow_dev_db
+      
+      # Azure OpenAI (Required)
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=${AZURE_OPENAI_CHAT_DEPLOYMENT_NAME}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      
+      # Whisper CPU Configuration (can be overridden by .env)
+      - WHISPER_USE_LOCAL=${WHISPER_USE_LOCAL:-true}
+      - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-base}
+      - WHISPER_DEVICE=${WHISPER_DEVICE:-cpu}
+      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8}
+    volumes:
+      # Hot-reload: Mount source code for live changes
+      - ./Backend:/app/Backend
+      - backend_dev_uploads:/app/Backend/uploads
+      # Exclude Python cache and model cache from host
+      - /app/Backend/__pycache__
+      - /app/Backend/**/__pycache__
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - talentflow-dev-network
+    command: ["python", "-u", "main.py"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Frontend Streamlit Service (Development with Hot-Reload)
+  frontend-dev:
+    build:
+      context: .
+      dockerfile: App/Dockerfile
+    container_name: talentflow-frontend-dev
+    restart: unless-stopped
+    working_dir: /app/App
+    ports:
+      - "8501:8501"
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      - STREAMLIT_SERVER_FILE_WATCHER_TYPE=auto
+      - STREAMLIT_SERVER_RUN_ON_SAVE=true
+      # API Configuration for Docker networking
+      - API_HOST=backend-dev-cpu
+      - API_PORT=8000
+    volumes:
+      # Hot-reload: Mount source code for live changes
+      - ./App:/app/App
+      # Exclude Python cache from host
+      - /app/App/__pycache__
+      - /app/App/**/__pycache__
+    depends_on:
+      - mongodb
+    networks:
+      - talentflow-dev-network
+    command: ["streamlit", "run", "streamlit_app.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true", "--server.fileWatcherType=auto", "--server.runOnSave=true"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+# Networks
+networks:
+  talentflow-dev-network:
+    driver: bridge
+    name: talentflow-dev-network
+
+# Volumes
+volumes:
+  mongodb_dev_data:
+    driver: local
+    name: talentflow-mongodb-dev-data
+  backend_dev_uploads:
+    driver: local
+    name: talentflow-backend-dev-uploads
+
+# =============================================
+# Development Usage Instructions:
+# =============================================
+# 
+# GPU Mode:
+#   docker compose -f docker-compose.dev.yml --profile gpu up -d
+#   - Hot-reload enabled
+#   - GPU acceleration
+#   - Medium Whisper model
+# 
+# CPU Mode:
+#   docker compose -f docker-compose.dev.yml --profile cpu up -d
+#   - Hot-reload enabled
+#   - CPU-only (lighter)
+#   - Base Whisper model
+# 
+# View logs:
+#   docker compose -f docker-compose.dev.yml logs -f
+# 
+# Stop:
+#   docker compose -f docker-compose.dev.yml --profile gpu down
+#   docker compose -f docker-compose.dev.yml --profile cpu down
+# 
+# Features:
+# - Hot-reload for both frontend and backend
+# - Separate development database
+# - GPU or CPU support based on profile
+# - Source code mounted as volumes
+# - Auto-restart on file changes
+# - Development-specific environment variables
+# =============================================

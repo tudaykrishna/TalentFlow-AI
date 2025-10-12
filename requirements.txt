@@ -57,6 +57,7 @@ torchaudio==2.8.0
 pandas==2.2.3
 pydantic==2.10.4
 pydantic-settings==2.7.1
+email-validator==2.2.0  # Required for Pydantic email validation
 
 # === HTTP Client ===
 requests==2.32.3

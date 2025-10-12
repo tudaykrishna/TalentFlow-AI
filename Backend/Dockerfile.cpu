@@ -1,0 +1,63 @@
+# ================================
+# TalentFlow AI - Backend Service
+# CPU-Optimized (No GPU Required)
+# ================================
+
+# Use Python slim base image for CPU
+FROM python:3.10-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    libsndfile1 \
+    curl \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements from root
+COPY requirements.txt .
+
+# Upgrade pip
+RUN python -m pip install --upgrade pip
+
+# Install PyTorch CPU-only version (much smaller than CUDA version)
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# Install other requirements
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Pre-download Whisper base model (smaller, optimized for CPU)
+RUN python -c "from faster_whisper import download_model; download_model('base')" || echo "Model will be downloaded at runtime"
+
+# Copy Backend application code
+COPY Backend/ /app/Backend/
+
+# Set working directory to Backend
+WORKDIR /app/Backend
+
+# Create uploads directory
+RUN mkdir -p uploads/resumes uploads/jds uploads/tts Backend/uploads/interview_resumes
+
+# Set environment variables for CPU usage
+ENV WHISPER_USE_LOCAL=true
+ENV WHISPER_MODEL_SIZE=base
+ENV WHISPER_DEVICE=cpu
+ENV WHISPER_COMPUTE_TYPE=int8
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8000/health || exit 1
+
+# Expose port
+EXPOSE 8000
+
+# Start the application
+CMD ["python", "main.py"]

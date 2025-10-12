@@ -14,7 +14,8 @@
 - [Authentication System](#authentication-system)
 - [Installation](#installation)
 - [Configuration](#configuration)
-- [Running the Application](#running-the-application)
+- [🐳 Docker Deployment (Recommended)](#docker-deployment-recommended)
+- [🏃 Local Development (Alternative to Docker)](#local-development-alternative-to-docker)
 - [Usage Guide](#usage-guide)
 - [Voice Features](#voice-features)
 - [API Documentation](#api-documentation)
@@ -332,7 +333,242 @@ WHISPER_COMPUTE_TYPE=float16
 
 ---
 
-## 🏃 Running the Application
+## 🐳 Docker Deployment (Recommended)
+
+### Prerequisites for Docker
+
+1. **Docker 20.10+** with Docker Compose V2
+2. **NVIDIA Container Toolkit** (for GPU support)
+3. **NVIDIA GPU** with CUDA support (GTX 1060+ or RTX series recommended)
+4. **Azure OpenAI Account** (required for all AI features)
+
+### Quick Start with Docker
+
+#### **Option 1: Easy Setup (Recommended)**
+
+```bash
+# 1. Clone and setup
+git clone <repository-url>
+cd TalentFlow-AI
+
+# 2. Configure environment
+cp .env.example .env
+# Edit .env with your Azure OpenAI credentials
+
+# 3. Start with automated script
+# Windows:
+start-docker.bat
+# Linux/Mac:
+./start-docker.sh
+```
+
+#### **Option 2: Manual Docker Commands**
+
+```bash
+# Production deployment
+docker compose up -d
+
+# Development with hot-reload
+docker compose -f docker-compose.dev.yml up -d
+
+# View logs
+docker compose logs -f
+
+# Stop services
+docker compose down
+```
+
+### Docker Configuration Files
+
+| File | Purpose | Use Case |
+|------|---------|----------|
+| `docker-compose.yml` | Production deployment | Optimized builds, no hot-reload |
+| `docker-compose.dev.yml` | Development | Hot-reload, debugging enabled |
+| `Backend/Dockerfile` | GPU-optimized backend | CUDA 12.1, faster-whisper medium model |
+| `App/Dockerfile` | Streamlit frontend | Lightweight Python image |
+
+### GPU Requirements
+
+**Minimum GPU Requirements:**
+- NVIDIA GTX 1060 (6GB VRAM) or better
+- CUDA Compute Capability 6.1+
+- 8GB+ VRAM for medium Whisper model
+
+**Recommended GPUs:**
+- RTX 3060/4060 (12GB VRAM) - Excellent performance
+- RTX 3070/4070+ (16GB+ VRAM) - Optimal performance
+- A4000/A5000 - Professional workloads
+
+### Environment Configuration
+
+Create `.env` file with your credentials:
+
+```bash
+# Azure OpenAI (Required)
+AZURE_OPENAI_API_KEY=your_api_key
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
+AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=gpt-4o-mini
+AZURE_OPENAI_API_VERSION=2024-02-15-preview
+
+# GPU Configuration (Auto-configured)
+WHISPER_USE_LOCAL=true
+WHISPER_MODEL_SIZE=medium
+WHISPER_DEVICE=cuda
+WHISPER_COMPUTE_TYPE=float16
+```
+
+### Docker Services
+
+The application consists of 3 containerized services:
+
+#### **Backend (GPU-Enabled)**
+- **Image:** Custom CUDA 12.1 + Python 3.10
+- **GPU Access:** Full NVIDIA GPU access for faster-whisper
+- **Ports:** 8000 (API), 8000/docs (Documentation)
+- **Volumes:** Persistent uploads, model cache
+- **Features:** Azure OpenAI, MongoDB, faster-whisper, file uploads
+
+#### **Frontend (Streamlit)**
+- **Image:** Python 3.10 slim
+- **Ports:** 8501 (Web Interface)
+- **Features:** Responsive UI, file uploads, real-time updates
+
+#### **MongoDB**
+- **Image:** MongoDB 7
+- **Ports:** 27017
+- **Volumes:** Persistent database storage
+- **Features:** User accounts, JDs, resumes, interviews
+
+### Performance Optimization
+
+#### **GPU Memory Management**
+```bash
+# Monitor GPU usage
+docker exec talentflow-backend nvidia-smi
+
+# Check Whisper model loading
+docker logs talentflow-backend | grep "Whisper"
+```
+
+#### **Container Resource Limits**
+```yaml
+# Production limits (adjust based on your hardware)
+deploy:
+  resources:
+    limits:
+      memory: 8G        # Backend with GPU models
+    reservations:
+      devices:
+        - driver: nvidia
+          count: 1
+          capabilities: [gpu]
+```
+
+### Development Workflow
+
+#### **Hot-Reload Development**
+```bash
+# Start development environment
+docker compose -f docker-compose.dev.yml up -d
+
+# Code changes are automatically reflected
+# Backend: FastAPI auto-reload
+# Frontend: Streamlit file watcher
+
+# View logs for specific service
+docker compose -f docker-compose.dev.yml logs -f backend-dev
+```
+
+#### **Debugging in Containers**
+```bash
+# Access backend container shell
+docker exec -it talentflow-backend bash
+
+# Access frontend container shell  
+docker exec -it talentflow-frontend bash
+
+# Check GPU status inside container
+docker exec talentflow-backend nvidia-smi
+```
+
+### Deployment Scenarios
+
+#### **Single Machine (Development)**
+- Use `docker-compose.dev.yml`
+- Hot-reload enabled
+- Debug logging
+- Local volume mounts
+
+#### **Production Server**
+- Use `docker-compose.yml`
+- Optimized builds
+- Health checks enabled
+- Persistent volumes
+
+#### **Cloud Deployment (AWS/GCP/Azure)**
+- GPU-enabled VM instances
+- Persistent disk volumes
+- Load balancer (optional)
+- SSL termination (nginx proxy)
+
+### Troubleshooting
+
+#### **Common Issues**
+
+1. **GPU Not Detected**
+   ```bash
+   # Check NVIDIA drivers
+   nvidia-smi
+   
+   # Check Docker GPU support
+   docker run --rm --gpus all nvidia/cuda:12.1-base nvidia-smi
+   
+   # Install NVIDIA Container Toolkit
+   # Ubuntu/Debian:
+   sudo apt-get install nvidia-container-toolkit
+   sudo systemctl restart docker
+   ```
+
+2. **Out of GPU Memory**
+   ```bash
+   # Use smaller Whisper model
+   WHISPER_MODEL_SIZE=base  # Instead of medium
+   
+   # Or use CPU fallback
+   WHISPER_DEVICE=cpu
+   ```
+
+3. **Container Build Failures**
+   ```bash
+   # Clear Docker cache and rebuild
+   docker system prune -a
+   docker compose build --no-cache
+   ```
+
+4. **Slow Performance**
+   ```bash
+   # Check GPU utilization
+   docker exec talentflow-backend nvidia-smi
+   
+   # Monitor container resources
+   docker stats
+   ```
+
+### Production Deployment Checklist
+
+- [ ] NVIDIA GPU drivers installed
+- [ ] NVIDIA Container Toolkit configured
+- [ ] `.env` file configured with Azure OpenAI credentials
+- [ ] Sufficient GPU memory (8GB+ recommended)
+- [ ] Docker Compose V2 installed
+- [ ] Firewall configured (ports 8000, 8501)
+- [ ] SSL certificates (for production web access)
+- [ ] Backup strategy for MongoDB volumes
+- [ ] Monitoring setup (optional)
+
+---
+
+## 🏃 Local Development (Alternative to Docker)
 
 ### 1. Start MongoDB
 ```bash

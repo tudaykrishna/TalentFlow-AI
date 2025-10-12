@@ -1,0 +1,72 @@
+# ================================
+# TalentFlow AI - Backend Service
+# GPU-Optimized with CUDA Support
+# ================================
+
+# Use NVIDIA CUDA base image for GPU support
+FROM nvidia/cuda:12.3.2-cudnn9-devel-ubuntu22.04
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
+    python3.10-venv \
+    ffmpeg \
+    libsndfile1 \
+    git \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create symbolic link for python
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements from root
+COPY requirements.txt .
+
+# Upgrade pip and install Python dependencies
+RUN python -m pip install --upgrade pip
+
+# Install PyTorch with CUDA 12.3 support first (for faster-whisper)
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu123
+
+# Install other requirements
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Pre-download Whisper models for faster startup (skip if no GPU during build)
+RUN python -c "from faster_whisper import download_model; download_model('medium')" || echo "Model will be downloaded at runtime"
+
+# Copy Backend application code
+COPY Backend/ /app/Backend/
+
+# Set working directory to Backend
+WORKDIR /app/Backend
+
+# Create uploads directory
+RUN mkdir -p uploads/resumes uploads/jds uploads/tts Backend/uploads/interview_resumes
+
+# Set environment variables for GPU usage
+ENV WHISPER_USE_LOCAL=true
+ENV WHISPER_MODEL_SIZE=medium
+ENV WHISPER_DEVICE=cuda
+ENV WHISPER_COMPUTE_TYPE=float16
+ENV CUDA_VISIBLE_DEVICES=0
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8000/health || exit 1
+
+# Expose port
+EXPOSE 8000
+
+# Start the application
+CMD ["python", "main.py"]

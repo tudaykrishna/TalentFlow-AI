@@ -18,7 +18,12 @@ if "user_email" not in st.session_state:
     st.session_state.user_email = None
 
 if "api_base_url" not in st.session_state:
-    st.session_state.api_base_url = "http://localhost:8000/api"
+    # Configure API URL based on environment
+    # In Docker containers, use service name; in local dev, use localhost
+    import os
+    api_host = os.getenv('API_HOST', 'localhost')
+    api_port = os.getenv('API_PORT', '8000')
+    st.session_state.api_base_url = f"http://{api_host}:{api_port}/api"
 
 if "interview_id" not in st.session_state:
     st.session_state.interview_id = None
