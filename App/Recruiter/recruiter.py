@@ -3,10 +3,7 @@ import streamlit as st
 import requests
 from datetime import datetime
 
-# Sidebar with chatbot
-with st.sidebar:
-    from Recruiter.chatbot import render_chatbot
-    render_chatbot()
+# Sidebar removed - chatbot functionality disabled
 
 st.title("📊 Recruiter Dashboard")
 st.write(f"Welcome, {st.session_state.get('user_name', 'Recruiter')}!")
