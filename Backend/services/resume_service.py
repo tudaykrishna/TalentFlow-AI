@@ -2,19 +2,15 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-try:
-    from langchain_ollama import OllamaLLM
-except ImportError:
-    # Fallback to old import for compatibility
-    from langchain_community.llms import Ollama as OllamaLLM
+from langchain_openai import AzureChatOpenAI
 from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
 from langchain.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 from typing import List, Dict, Literal
 import logging
 import PyPDF2
 import io
+import json
 
 # Load .env from project root
 project_root = Path(__file__).resolve().parent.parent.parent
@@ -50,15 +46,43 @@ class ScreeningResult(BaseModel):
 class ResumeScreenerService:
     """AI-powered Resume Screening Service"""
     
-    def __init__(self, model_name: str = None):
-        """Initialize the Resume Screener with Ollama model"""
+    def __init__(self):
+        """Initialize the Resume Screener with Azure OpenAI model"""
         try:
-            # Use environment variable or default model
-            model_name = model_name or os.getenv("OLLAMA_MODEL", "llama3.1:8b")
-            self.llm = OllamaLLM(model=model_name, temperature=0.0, format="json")
-            logger.info(f"✅ Resume Screener initialized with model: {model_name}")
+            # Get environment variables
+            api_key = os.getenv("AZURE_OPENAI_API_KEY")
+            api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+            azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+            deployment_name = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME")
+            
+            # Debug logging
+            logger.info(f"Initializing Resume Screener with:")
+            logger.info(f"  Endpoint: {azure_endpoint}")
+            logger.info(f"  Deployment: {deployment_name}")
+            logger.info(f"  API Version: {api_version}")
+            
+            # Validate required configs
+            if not all([api_key, api_version, azure_endpoint, deployment_name]):
+                missing = []
+                if not api_key: missing.append("AZURE_OPENAI_API_KEY")
+                if not api_version: missing.append("AZURE_OPENAI_API_VERSION")
+                if not azure_endpoint: missing.append("AZURE_OPENAI_ENDPOINT")
+                if not deployment_name: missing.append("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME")
+                raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+            
+            self.llm = AzureChatOpenAI(
+                api_key=api_key,
+                api_version=api_version,
+                azure_endpoint=azure_endpoint,
+                deployment_name=deployment_name,
+                temperature=0.0,
+                model_kwargs={
+                    "response_format": {"type": "json_object"},
+                }
+            )
+            logger.info("✅ Resume Screener initialized successfully with Azure OpenAI")
         except Exception as e:
-            logger.error(f"❌ Error initializing Ollama model: {e}")
+            logger.error(f"❌ Error initializing Azure OpenAI model: {e}")
             raise
 
     def extract_text_from_pdf(self, pdf_file) -> str:
@@ -88,14 +112,16 @@ class ResumeScreenerService:
             partial_variables={"format_instructions": parser.get_format_instructions()},
         )
         
-        chain = LLMChain(llm=self.llm, prompt=prompt)
+        chain = prompt | self.llm
         
         try:
             output = chain.invoke({"document_text": text})
-            parsed_output = parser.parse(output['text'])
+            # Parse the JSON response from Azure OpenAI
+            parsed_output = parser.parse(output.content)
             return parsed_output
         except Exception as e:
             logger.error(f"❌ Error during data extraction: {e}")
+            logger.error(f"Response content: {output.content if 'output' in locals() else 'N/A'}")
             return None
 
     async def screen_resume(self, jd_text: str, resume_text: str) -> ScreeningResult:
@@ -148,14 +174,14 @@ class ResumeScreenerService:
                 partial_variables={"format_instructions": comparison_parser.get_format_instructions()},
             )
             
-            comparison_chain = LLMChain(llm=self.llm, prompt=comparison_prompt)
+            comparison_chain = comparison_prompt | self.llm
             
             result_output = comparison_chain.invoke({
                 "jd_json": jd_data.model_dump_json(),
                 "resume_json": resume_data.model_dump_json()
             })
             
-            final_result = comparison_parser.parse(result_output['text'])
+            final_result = comparison_parser.parse(result_output.content)
             
             logger.info("✅ Screening completed successfully")
             return final_result, resume_data

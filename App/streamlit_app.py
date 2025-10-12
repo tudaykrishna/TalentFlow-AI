@@ -171,21 +171,6 @@ admin_page_1 = st.Page(
     default=(role == "Admin"),
 )
 admin_page_2 = st.Page(
-    "Admin/Demo1.py", 
-    title="User Management", 
-    icon=":material/group:"
-)
-admin_page_3 = st.Page(
-    "Admin/Demo2.py", 
-    title="Analytics", 
-    icon=":material/analytics:"
-)
-admin_page_4 = st.Page(
-    "Admin/Demo3.py", 
-    title="System Logs", 
-    icon=":material/description:"
-)
-admin_page_5 = st.Page(
     "debug_config.py", 
     title="Debug Config", 
     icon=":material/bug_report:"
@@ -195,7 +180,7 @@ admin_page_5 = st.Page(
 account_pages = [logout_page, settings]
 user_pages = [user_page_1, user_page_2]
 recruiter_pages = [recruiter_page_1, recruiter_page_2, recruiter_page_3, recruiter_page_4, recruiter_page_5]
-admin_pages = [admin_page_1, admin_page_2, admin_page_3, admin_page_4, admin_page_5]
+admin_pages = [admin_page_1, admin_page_2]
 
 # Set page configuration
 st.set_page_config(

@@ -10,41 +10,6 @@ API_BASE_URL = st.session_state.get('api_base_url', 'http://localhost:8000/api')
 
 st.divider()
 
-# System Overview
-st.subheader("📊 System Overview")
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.metric(
-        label="Total Users",
-        value="0",
-        delta="0 new"
-    )
-
-with col2:
-    st.metric(
-        label="Active Recruiters",
-        value="0",
-        delta="0 active"
-    )
-
-with col3:
-    st.metric(
-        label="Job Descriptions",
-        value="0",
-        delta="0 this week"
-    )
-
-with col4:
-    st.metric(
-        label="Total Interviews",
-        value="0",
-        delta="0 ongoing"
-    )
-
-st.divider()
-
 # System Health
 st.subheader("🏥 System Health")
 
@@ -54,7 +19,7 @@ try:
     if response.status_code == 200:
         health_data = response.json()
         
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             st.success("✅ Backend API: Running")
@@ -65,29 +30,15 @@ try:
                 st.success("✅ MongoDB: Connected")
             else:
                 st.error("❌ MongoDB: Disconnected")
+        
+        with col3:
+            if st.button("⚙️ System Settings", use_container_width=True, type="primary"):
+                st.switch_page("settings.py")
     else:
         st.error("❌ Backend API: Not responding")
         
 except requests.exceptions.RequestException:
     st.error("❌ Backend API: Offline")
-
-
-# Quick Actions
-st.subheader("⚡ Quick Actions")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    if st.button("👥 Manage Users", use_container_width=True, type="primary"):
-        st.info("User management feature - Coming soon!")
-
-with col2:
-    if st.button("📊 View Analytics", use_container_width=True, type="primary"):
-        st.info("Analytics dashboard - Coming soon!")
-
-with col3:
-    if st.button("⚙️ System Settings", use_container_width=True, type="primary"):
-        st.switch_page("settings.py")
 
 st.divider()
 
@@ -130,35 +81,17 @@ with st.expander("⚙️ System Configuration"):
     ### Configuration Settings
     
     - **MongoDB URI**: Check .env file
-    - **Azure OpenAI**: Configured for JD generation and interviews
-    - **Ollama Model**: Used for resume screening
+    - **Azure OpenAI**: Configured for all AI features (JD generation, resume screening, interviews, and chatbot)
+    - **Google TTS**: Used for interview question audio
+    - **Whisper**: Used for local voice transcription (optional)
     - **Max File Upload**: 10MB per resume
     - **Session Timeout**: 30 minutes
-    
-    ### Maintenance
-    
-    - Database backup: Automated daily
-    - Log retention: 30 days
-    - API rate limiting: Configured
     """)
 
 # Database Management
-with st.expander("💾 Database Management"):
-    st.write("**Collections:**")
-    st.write("- users")
-    st.write("- recruiters")
-    st.write("- jds (Job Descriptions)")
-    st.write("- resumes")
-    st.write("- interviews")
-    
-    st.divider()
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("📊 View Collection Stats", use_container_width=True):
-            st.info("Collection statistics - Coming soon!")
-    
-    with col2:
-        if st.button("🔄 Refresh Database", use_container_width=True):
-            st.info("Database refresh - Coming soon!")
+with st.expander("💾 Database Collections"):
+    st.write("**Active Collections:**")
+    st.write("- `users` - User accounts and authentication")
+    st.write("- `jds` - Job Descriptions")
+    st.write("- `resumes` - Resume screening results")
+    st.write("- `interviews` - AI interview sessions")

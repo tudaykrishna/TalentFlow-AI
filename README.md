@@ -52,7 +52,7 @@ TalentFlow AI is a comprehensive HR recruitment platform that leverages artifici
 
 - **🔍 Resume Screener**
   - Batch resume processing (PDF support)
-  - AI-powered candidate matching using Ollama
+  - AI-powered candidate matching using Azure OpenAI
   - Match score calculation (0-100%)
   - Detailed candidate analysis
   - Export results as CSV
@@ -126,11 +126,10 @@ TalentFlow AI is a comprehensive HR recruitment platform that leverages artifici
 - **Uvicorn** - ASGI server
 
 ### AI/ML
-- **Azure OpenAI (GPT-4o-mini)** - JD generation, interviews, and recruiter chatbot
-- **Ollama (Llama 3.1:8b)** - Resume screening
+- **Azure OpenAI (GPT-4o-mini)** - JD generation, resume screening, interviews, and recruiter chatbot
 - **LangChain** - AI workflow orchestration and prompt management
 - **LangGraph** - Interview state management
-- **Local Whisper (faster-whisper)** - GPU-accelerated speech-to-text
+- **Local Whisper (faster-whisper)** - GPU-accelerated speech-to-text (optional)
 - **Dynamic Question Generation** - Resume + JD analysis for personalized interviews
 
 ### Voice Processing
@@ -151,10 +150,7 @@ TalentFlow-AI/
 │
 ├── App/                                # Streamlit Frontend
 │   ├── Admin/                          # Admin screens
-│   │   ├── admin.py                    # Dashboard
-│   │   ├── Demo1.py                    # User Management
-│   │   ├── Demo2.py                    # Analytics
-│   │   └── Demo3.py                    # System Logs
+│   │   └── admin.py                    # Main Dashboard (System Health & Activity)
 │   │
 │   ├── utils/                          # Utility modules
 │   │   └── env_loader.py               # Environment variable loader
@@ -170,7 +166,7 @@ TalentFlow-AI/
 │   ├── User/                           # User screens
 │   │   ├── user.py                     # Dashboard
 │   │   ├── ai_interview.py             # AI Interview Interface
-│   │   └── Demo4.py                    # Additional features
+│   │   └── user_tools.py               # Additional features
 │   │
 │   ├── images/                         # UI assets
 │   ├── debug_config.py                 # Debug configuration (Admin only)
@@ -252,14 +248,9 @@ TalentFlow AI uses a secure MongoDB-based authentication system:
 
 1. **Python 3.10+** (with conda environment recommended)
 2. **MongoDB** (local or cloud)
-3. **Ollama** (for resume screening)
-   ```bash
-   # Install Ollama from https://ollama.ai
-   ollama pull llama3.1:8b
-   ```
-4. **Azure OpenAI Account** (required for JD generation, interviews, and chatbot)
-5. **Internet Connection** (for Google TTS and Azure OpenAI)
-6. **NVIDIA GPU** (optional, recommended for local Whisper voice features)
+3. **Azure OpenAI Account** (required for all AI features: JD generation, resume screening, interviews, and chatbot)
+4. **Internet Connection** (for Google TTS and Azure OpenAI)
+5. **NVIDIA GPU** (optional, recommended for local Whisper voice features)
 
 ### Steps
 
@@ -337,9 +328,6 @@ WHISPER_USE_LOCAL=true
 WHISPER_MODEL_SIZE=medium
 WHISPER_DEVICE=cuda
 WHISPER_COMPUTE_TYPE=float16
-
-# Ollama
-OLLAMA_MODEL=llama3.1:8b
 ```
 
 ---
@@ -352,13 +340,7 @@ OLLAMA_MODEL=llama3.1:8b
 mongod
 ```
 
-### 2. Start Ollama
-```bash
-# Ensure Ollama is running
-ollama serve
-```
-
-### 3. Start the Backend (FastAPI)
+### 2. Start the Backend (FastAPI)
 ```bash
 # Option 1: Use the startup script
 start_backend.bat
@@ -374,7 +356,7 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 The backend will be available at: `http://localhost:8000`
 API documentation: `http://localhost:8000/docs`
 
-### 4. Start the Frontend (Streamlit)
+### 3. Start the Frontend (Streamlit)
 ```bash
 # Option 1: Use the startup script
 start_frontend.bat
@@ -599,36 +581,31 @@ open http://localhost:8000/docs
    - Check MONGODB_URI in .env
    - Verify network connectivity
 
-3. **Ollama Not Found**
-   - Install Ollama from https://ollama.ai
-   - Run `ollama pull llama3.1:8b`
-   - Ensure Ollama service is running
-
-4. **Azure OpenAI Errors**
+3. **Azure OpenAI Errors**
    - Verify API key and endpoint in .env file
    - Check deployment name (without quotes): `AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=gpt-4o-mini`
    - Ensure deployment exists in Azure Portal
    - Check API version is supported
 
-5. **Whisper Not Working**
+4. **Whisper Not Working**
    - Ensure NVIDIA GPU is available
    - Check CUDA installation
    - Verify faster-whisper installation
    - Check GPU memory availability
 
-6. **TTS (Audio Questions) Not Working**
+5. **TTS (Audio Questions) Not Working**
    - Install gTTS: `pip install gTTS`
    - Ensure backend is running in correct conda environment
    - Check network connectivity (gTTS requires internet)
    - Click "Play Question as Audio" button to generate audio
 
-7. **Chatbot Not Responding**
+6. **Chatbot Not Responding**
    - Check Azure OpenAI configuration
    - Verify deployment name is correct (no quotes in .env)
    - Check backend logs for LLM initialization errors
    - Ensure .env file is loaded from project root
 
-8. **Resume Upload Issues**
+7. **Resume Upload Issues**
    - Ensure file is PDF format
    - Check file size (must be < 10MB)
    - Verify uploads directory exists and is writable
@@ -641,38 +618,11 @@ open http://localhost:8000/docs
 
 ---
 
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these guidelines:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly (including voice features)
-5. Submit a pull request
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
----
-
-## 👥 Support
-
-For issues, questions, or suggestions:
-- Create an issue on GitHub
-- Contact the development team
-
----
-
 ## 🎉 Acknowledgments
 
-- **Azure OpenAI** for powerful GPT-4o-mini capabilities powering JD generation, interviews, and chatbot
+- **Azure OpenAI** for powerful GPT-4o-mini capabilities powering all AI features (JD generation, resume screening, interviews, and chatbot)
 - **Google** for free, high-quality Text-to-Speech (gTTS) service
-- **Ollama** for local LLM support enabling resume screening
-- **OpenAI Whisper** for accurate speech recognition
+- **OpenAI's Whisper** for state-of-the-art speech recognition
 - **Streamlit** for the amazing frontend framework enabling rapid UI development
 - **FastAPI** for the robust, high-performance backend framework
 - **MongoDB** for flexible document-based data storage
@@ -680,15 +630,10 @@ For issues, questions, or suggestions:
 
 ---
 
-**Built with ❤️ for modern HR teams**
-
-*Featuring personalized AI interviews, intelligent recruiter assistance, voice processing, and seamless user experience*
-
----
 
 ## 🆕 Latest Updates
 
-### v2.0 - Enhanced Interview Experience
+###  Enhanced Interview Experience
 - ✅ **Resume-Based Personalization** - Questions generated from candidate's resume + JD
 - ✅ **Interview Preferences** - Audio/Text mode selection for both interviewer and candidate
 - ✅ **AI Recruiter Assistant** - Sidebar chatbot powered by Azure OpenAI

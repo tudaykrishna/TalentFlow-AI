@@ -13,7 +13,7 @@ This document provides detailed explanations of every folder and file in the Tal
 **`.env`**
 - **Purpose**: Environment variables configuration
 - **Contains**: API keys, database connections, service configurations
-- **Key Variables**: Azure OpenAI credentials, MongoDB URI, Ollama settings
+- **Key Variables**: Azure OpenAI credentials, MongoDB URI, Whisper settings
 - **Used By**: All services for configuration loading
 
 **`requirements.txt`**
@@ -115,40 +115,19 @@ Contains all Streamlit-based user interfaces for different user roles.
 Administrative interfaces for system management and monitoring.
 
 **`admin.py`**
-- **Purpose**: Main admin dashboard
+- **Purpose**: Main admin dashboard with system monitoring
 - **Functionality**: 
-  - System overview and health monitoring
-  - User management interface
-  - Analytics and metrics display
-  - Navigation to admin tools
-- **Features**: Quick stats, system health, navigation buttons
-
-**`Demo1.py`**
-- **Purpose**: User Management interface
-- **Functionality**: 
-  - View all users (Admin, Recruiter, User)
-  - Create new admin/recruiter accounts
-  - Monitor temporary candidate accounts
-  - User activity tracking
+  - System health monitoring (Backend API, MongoDB status)
+  - Recent system activity display
+  - Configuration overview
+  - Database collections information
+  - Navigation to settings and debug config
+- **Features**: 
+  - Real-time health checks
+  - Recent job descriptions display via API
+  - System configuration reference
+  - Database collections list
 - **Access Level**: Admin only
-
-**`Demo2.py`**
-- **Purpose**: System Analytics dashboard
-- **Functionality**: 
-  - Platform usage statistics
-  - Performance metrics
-  - Interview success rates
-  - User engagement analytics
-- **Features**: Charts, graphs, KPI tracking
-
-**`Demo3.py`**
-- **Purpose**: System Logs viewer
-- **Functionality**: 
-  - Real-time log monitoring
-  - Error tracking and debugging
-  - System event history
-  - Log filtering and search
-- **Used For**: Troubleshooting and system monitoring
 
 ---
 
@@ -199,7 +178,7 @@ Recruiter-specific interfaces for managing the entire recruitment process.
   - Match score calculation (0-100%)
   - Detailed analysis and recommendations
   - CSV export for results
-- **AI Integration**: Ollama Llama 3.1:8b for local resume analysis
+- **AI Integration**: Azure OpenAI for intelligent resume analysis
 
 **`interview_assignment.py`**
 - **Purpose**: Interview assignment and management interface
@@ -256,7 +235,7 @@ Candidate-facing interfaces for taking interviews and viewing assignments.
   - Real-time API communication
   - Audio player integration
 
-**`Demo4.py`**
+**`user_tools.py`**
 - **Purpose**: Additional user features and demonstrations
 - **Functionality**: Extended user capabilities and feature testing
 - **Used For**: Feature demonstrations and testing
@@ -437,7 +416,7 @@ Business logic layer containing all AI and processing services.
   - AI-powered candidate matching against job descriptions
   - Match score calculation and recommendation generation
 - **AI Integration**: 
-  - Uses Ollama Llama 3.1:8b for local processing
+  - Uses Azure OpenAI for intelligent processing
   - LangChain for structured data extraction
   - Pydantic models for data validation
 - **Enhanced Features**: Improved environment loading
@@ -491,39 +470,18 @@ Business logic layer containing all AI and processing services.
 ## 🛣️ Admin Interface Details
 
 **`Admin/admin.py`**
-- **Purpose**: Central admin dashboard
-- **Sections**: 
-  - System health overview
-  - User statistics
-  - Quick navigation to admin tools
-- **Features**: Metrics cards, recent activity, quick actions
-
-**`Admin/Demo1.py`**
-- **Purpose**: User Management System
-- **Features**: 
-  - User creation interface
-  - View all registered users
-  - Monitor temporary interview accounts
-  - User role management
-- **Functionality**: Complete user lifecycle management
-
-**`Admin/Demo2.py`**
-- **Purpose**: Analytics and Reporting
-- **Features**: 
-  - Interview completion rates
-  - Candidate performance analytics
-  - Recruiter activity metrics
-  - System usage trends
-- **Visualization**: Charts and graphs for data insights
-
-**`Admin/Demo3.py`**
-- **Purpose**: System Logs and Monitoring
-- **Features**: 
-  - Real-time log streaming
-  - Error tracking
-  - Performance monitoring
-  - Debug information access
-- **Used For**: System troubleshooting and maintenance
+- **Purpose**: Central admin dashboard with system monitoring
+- **Main Features**: 
+  - **System Health Monitoring**: Real-time checks for Backend API and MongoDB connection
+  - **Recent Activity**: Display of recent job descriptions via API
+  - **System Configuration**: Overview of configured services (Azure OpenAI, Google TTS, Whisper)
+  - **Database Collections**: List of active MongoDB collections
+  - **Navigation**: Quick access to Settings and Debug Config
+- **Technical Details**: 
+  - API health checks with error handling
+  - Dynamic recent JDs fetching from backend
+  - Expandable configuration and database information sections
+- **Access Level**: Admin only
 
 ---
 
@@ -561,7 +519,7 @@ Business logic layer containing all AI and processing services.
   - Match score display (0-100%)
   - Detailed candidate analysis
   - CSV export functionality
-- **AI Processing**: Ollama-based structured data extraction and matching
+- **AI Processing**: Azure OpenAI-based structured data extraction and matching
 
 **`Recruiter/interview_assignment.py`**
 - **Purpose**: Interview assignment with enhanced tracking
@@ -626,7 +584,7 @@ Business logic layer containing all AI and processing services.
   - Audio file handling and playback
   - Session state management
 
-**`User/Demo4.py`**
+**`User/user_tools.py`**
 - **Purpose**: Additional user features and capabilities
 - **Functionality**: Extended user interface features
 - **Used For**: Feature testing and additional user tools
@@ -658,7 +616,7 @@ jd_generator.py → jd_routes.py → jd_service.py → Azure OpenAI → PDF Gene
 
 **Resume Screening Flow:**
 ```
-resume_screener.py → resume_routes.py → resume_service.py → Ollama LLM → Analysis
+resume_screener.py → resume_routes.py → resume_service.py → Azure OpenAI → Analysis
 ```
 
 ### AI Service Integration
@@ -670,10 +628,10 @@ resume_screener.py → resume_routes.py → resume_service.py → Ollama LLM →
 - **Interview Summary**: Final recommendations with reasoning
 - **Recruiter Chatbot**: Intelligent platform assistance
 
-**Ollama Integration:**
-- **Resume Screening**: Local LLM processing for privacy
-- **Structured Data Extraction**: Resume and JD analysis
-- **Candidate Matching**: Intelligent scoring and recommendations
+**Azure OpenAI Integration:**
+- **Resume Screening**: Intelligent candidate matching and analysis
+- **Structured Data Extraction**: Resume and JD analysis using GPT-4o-mini
+- **Candidate Matching**: AI-powered scoring and recommendations
 
 ---
 
@@ -874,10 +832,9 @@ Questions become highly personalized and relevant
 - **Resume Text**: Stored in MongoDB for quick access
 
 ### AI Service Usage
-- **Azure OpenAI**: Used for high-level reasoning (JD generation, interviews, chatbot)
-- **Ollama**: Used for local processing (resume screening)
+- **Azure OpenAI**: Used for all AI features (JD generation, resume screening, interviews, and chatbot)
 - **Google TTS**: Free tier has usage limits
-- **Local Whisper**: GPU-intensive but free
+- **Local Whisper**: GPU-intensive but free (optional for voice interviews)
 
 ### Database Performance
 - **Indexes**: Recommended on user_id, recruiter_id, interview_id

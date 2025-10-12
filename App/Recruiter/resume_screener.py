@@ -117,7 +117,7 @@ with tab1:
                     st.error("❌ Request timed out. Try uploading fewer resumes at once.")
                 except requests.exceptions.RequestException as e:
                     st.error(f"❌ Error connecting to backend: {str(e)}")
-                    st.info("Make sure the FastAPI backend is running and Ollama is accessible")
+                    st.info("Make sure the FastAPI backend is running and Azure OpenAI is properly configured")
 
     # Display results
     if 'screening_results' in st.session_state:
