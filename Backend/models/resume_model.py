@@ -48,13 +48,16 @@ class ResumeInDB(BaseModel):
 class ResumeScreenResponse(BaseModel):
     """Resume screening response (for API)"""
     candidate_name: str
-    match_score: int
+    similarity_score: float = Field(description="Similarity score from 0-100")
+    rank: int = Field(description="Ranking position (1 = most similar)")
     summary: str
     status: str
     resume_path: str
 
 class BatchScreenResponse(BaseModel):
-    """Batch screening response"""
+    """Batch screening response - returns top K most similar candidates"""
     results: List[ResumeScreenResponse]
-    total_processed: int
+    total_uploaded: int = Field(description="Total number of resumes uploaded")
+    total_processed: int = Field(description="Total number successfully processed")
+    top_k: int = Field(description="Number of top candidates returned")
     job_title: Optional[str] = None

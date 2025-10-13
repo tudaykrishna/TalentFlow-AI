@@ -19,7 +19,9 @@
 - [Voice Features](#voice-features)
 - [API Documentation](#api-documentation)
 - [Testing](#testing)
+- [Visual Workflows](#-visual-workflows) 🆕
 - [Troubleshooting](#troubleshooting)
+- [FAQ - Resume Screening](#-faq---resume-screening) 🆕
 - [Latest Updates](#latest-updates)
 - [Contributing](#contributing)
 
@@ -50,12 +52,14 @@ TalentFlow AI is a comprehensive HR recruitment platform that leverages artifici
   - Automatic PDF generation and download
   - Save and manage job descriptions
 
-- **🔍 Resume Screener**
+- **🔍 Resume Screener & Top-K Ranking**
   - Batch resume processing (PDF support)
-  - AI-powered candidate matching using Azure OpenAI
-  - Match score calculation (0-100%)
+  - **AI-powered similarity ranking** using Azure OpenAI embeddings + ChromaDB
+  - **Top-K selection** - Returns only the most similar candidates (configurable: 1-20)
+  - Semantic similarity scoring (0-100%)
+  - **Rank-based results** - See only the best matches (default: top 5)
   - Detailed candidate analysis
-  - Export results as CSV
+  - Export top candidates as CSV
 
 - **🎤 Interview Assignment**
   - Assign AI interviews to candidates
@@ -127,10 +131,13 @@ TalentFlow AI is a comprehensive HR recruitment platform that leverages artifici
 
 ### AI/ML
 - **Azure OpenAI (GPT-4o-mini)** - JD generation, resume screening, interviews, and recruiter chatbot
+- **Azure OpenAI Embeddings (text-embedding-3-large)** - Semantic resume-JD similarity matching
+- **ChromaDB** - Vector database for resume embeddings and similarity search
 - **LangChain** - AI workflow orchestration and prompt management
 - **LangGraph** - Interview state management
 - **Local Whisper (faster-whisper)** - GPU-accelerated speech-to-text (optional)
 - **Dynamic Question Generation** - Resume + JD analysis for personalized interviews
+- **Top-K Ranking Algorithm** - Batch processing and semantic similarity ranking
 
 ### Voice Processing
 - **Local Whisper** - Speech-to-text (GPU-accelerated, free, privacy-focused)
@@ -138,8 +145,9 @@ TalentFlow AI is a comprehensive HR recruitment platform that leverages artifici
 - **Audio Processing** - Real-time voice capture and playback
 - **Manual Audio Control** - User-controlled audio generation and playback
 
-### Database
-- **MongoDB** - NoSQL document database
+### Database & Storage
+- **MongoDB** - NoSQL document database for user data and results
+- **ChromaDB** - Vector database for resume embeddings and similarity search
 
 ---
 
@@ -180,28 +188,31 @@ TalentFlow-AI/
 │   ├── models/                         # Data models
 │   │   ├── user_model.py
 │   │   ├── jd_model.py
-│   │   ├── resume_model.py
+│   │   ├── resume_model.py             # Updated with similarity_score and rank fields
 │   │   └── interview_model.py
 │   │
 │   ├── routes/                         # API routes
 │   │   ├── auth_routes.py
 │   │   ├── jd_routes.py
-│   │   ├── resume_routes.py
+│   │   ├── resume_routes.py            # Updated with top_k parameter
 │   │   └── interview_routes.py
 │   │
 │   ├── services/                       # Business logic
 │   │   ├── auth_service.py
 │   │   ├── jd_service.py
-│   │   ├── resume_service.py
+│   │   ├── resume_service.py           # NEW: Top-K ranking with ChromaDB
 │   │   ├── interview_service.py        # Enhanced with resume-based question generation
 │   │   ├── whisper_service.py          # Local Whisper integration
 │   │   └── tts_service.py              # Google Text-to-Speech integration
 │   │
 │   ├── uploads/                        # File uploads
 │   │   ├── jds/                        # Generated JD PDFs
-│   │   ├── resumes/                    # Uploaded resumes (screening)
+│   │   ├── resumes/                    # Uploaded resumes (screening) - top K only
 │   │   ├── interview_resumes/          # Interview candidate resumes
 │   │   └── tts/                        # Generated audio files
+│   │
+│   ├── resume_db/                      # ChromaDB vector storage
+│   │   └── (vector embeddings for resume similarity search)
 │   │
 │   ├── create_user.py                  # User creation utility
 │   └── main.py                         # FastAPI app entry point
@@ -247,10 +258,12 @@ TalentFlow AI uses a secure MongoDB-based authentication system:
 ### Prerequisites
 
 1. **Python 3.10+** (with conda environment recommended)
-2. **MongoDB** (local or cloud)
-3. **Azure OpenAI Account** (required for all AI features: JD generation, resume screening, interviews, and chatbot)
-4. **Internet Connection** (for Google TTS and Azure OpenAI)
-5. **NVIDIA GPU** (optional, recommended for local Whisper voice features)
+2. **MongoDB** (local or cloud - for user data and results)
+3. **ChromaDB** (automatically installed - for resume vector storage)
+4. **Azure OpenAI Account** (required for all AI features: JD generation, resume screening embeddings, interviews, and chatbot)
+5. **Internet Connection** (for Google TTS and Azure OpenAI)
+6. **NVIDIA GPU** (optional, recommended for local Whisper voice features)
+7. **Disk Space** (at least 1GB for ChromaDB vector storage)
 
 ### Steps
 
@@ -280,6 +293,12 @@ TalentFlow AI uses a secure MongoDB-based authentication system:
    
    # Or using regular pip
    pip install -r requirements.txt
+   
+   # Key packages for resume screening:
+   # - chromadb: Vector database for resume embeddings
+   # - openai: Azure OpenAI client for embeddings
+   # - pypdf / PyPDF2: PDF text extraction
+   # - langchain-openai: LLM integration
    ```
 
 4. **Set up MongoDB**
@@ -322,6 +341,7 @@ AZURE_OPENAI_API_KEY=your_key_here
 AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
 AZURE_OPENAI_API_VERSION=2024-12-01-preview
 AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=gpt-4o-mini
+AZURE_EMBEDDING_MODEL=text-embedding-3-large  # For resume similarity matching
 
 # Local Whisper Configuration (Optional - for voice interviews)
 WHISPER_USE_LOCAL=true
@@ -391,12 +411,30 @@ The frontend will be available at: `http://localhost:8501`
    - Fill in job details
    - Generate and download PDF
 
-3. **Screen Resumes**
+3. **Screen Resumes (Top-K Ranking System)** 🆕
    - Navigate to "Resume Screener"
-   - Select or enter JD
-   - Upload resume PDFs
-   - View match scores and analysis
-   - Download results as CSV
+   - **Step 1**: Select existing JD or enter manually
+   - **Step 2**: Upload multiple resume PDFs (e.g., 15-20 resumes)
+   - **Step 3**: Configure top-K slider - Choose how many top candidates to see (1-20, default: 5)
+   - **Step 4**: Click "🚀 Rank Resumes & Get Top Candidates"
+   
+   **How it works:**
+   - System extracts text from ALL uploaded PDFs
+   - Generates semantic embeddings using Azure OpenAI
+   - Stores embeddings in ChromaDB vector database
+   - Ranks ALL resumes by similarity to job description
+   - **Returns ONLY the top K most similar candidates**
+   
+   **Results:**
+   - View ranked results with precise similarity scores (e.g., 87.3%)
+   - See ranking positions (#1, #2, #3...)
+   - Top candidate metrics dashboard
+   - Detailed analysis for each top candidate
+   - Download top candidates as CSV
+   
+   **Example:**
+   - Upload 20 resumes → Get top 5 best matches
+   - Upload 100 resumes → Get top 10 best matches (adjustable)
 
 4. **Assign Interviews**
    - Navigate to "Interview Assignment"
@@ -497,6 +535,46 @@ The API documentation is automatically generated and available at:
 - **Swagger UI**: `http://localhost:8000/docs`
 - **ReDoc**: `http://localhost:8000/redoc`
 
+### Example: Resume Screening Response
+
+**Request:**
+```bash
+POST /api/resume/screen
+- resumes: [15 PDF files]
+- jd_text: "Senior Python Developer with AI experience..."
+- recruiter_id: "rec_123"
+- top_k: 5
+```
+
+**Response:**
+```json
+{
+  "results": [
+    {
+      "candidate_name": "John Doe",
+      "similarity_score": 87.3,
+      "rank": 1,
+      "status": "Strong Match",
+      "summary": "Ranked #1 out of 15 candidates. Semantic similarity score: 87.3%. This candidate shows strong match with the job requirements.",
+      "resume_path": "uploads/resumes/John_Doe_20251013_143022_rank1.pdf"
+    },
+    {
+      "candidate_name": "Jane Smith",
+      "similarity_score": 82.1,
+      "rank": 2,
+      "status": "Strong Match",
+      "summary": "Ranked #2 out of 15 candidates...",
+      "resume_path": "..."
+    }
+    // ... 3 more top candidates
+  ],
+  "total_uploaded": 15,
+  "total_processed": 15,
+  "top_k": 5,
+  "job_title": "Senior Python Developer"
+}
+```
+
 ### Main Endpoints
 
 #### Authentication
@@ -511,10 +589,10 @@ The API documentation is automatically generated and available at:
 - `GET /api/jd/{jd_id}` - Get a specific JD
 - `GET /api/jd/recruiter/{recruiter_id}` - Get all JDs by recruiter
 
-#### Resume Screening
-- `POST /api/resume/screen` - Screen multiple resumes
-- `GET /api/resume/results/{recruiter_id}` - Get screening results
-- `GET /api/resume/detail/{resume_id}` - Get detailed result
+#### Resume Screening (Top-K Ranking)
+- `POST /api/resume/screen` - **Rank resumes and return top K** (new: `top_k` parameter, default: 5)
+- `GET /api/resume/results/{recruiter_id}` - Get screening results (supports both old and new formats)
+- `GET /api/resume/detail/{resume_id}` - Get detailed result (includes similarity_score and rank)
 
 #### AI Interviews
 - `POST /api/interview/assign` - Assign interview (auto-creates temp user)
@@ -556,6 +634,20 @@ python hi.py
 python hi2.py
 ```
 
+### Test Resume Screening (Top-K)
+```bash
+# Run the test script
+python test_top_k_ranking.py
+
+# Or test manually via Streamlit:
+# 1. Start backend and frontend
+# 2. Navigate to Resume Screener
+# 3. Upload 10-15 test PDFs
+# 4. Adjust top-K slider (try 3, 5, 10)
+# 5. Verify only top K results returned
+# 6. Check ranks are sequential (1, 2, 3...)
+```
+
 ### Test Backend
 ```bash
 # Check health endpoint
@@ -563,11 +655,20 @@ curl http://localhost:8000/health
 
 # View API docs
 open http://localhost:8000/docs
+
+# Test resume screening endpoint
+curl -X POST "http://localhost:8000/api/resume/screen" \
+  -F "resumes=@resume1.pdf" \
+  -F "resumes=@resume2.pdf" \
+  -F "jd_text=Python developer with AI experience" \
+  -F "recruiter_id=test_123" \
+    -F "top_k=2"
+```
 ```
 
 ---
 
-## 🔧 Troubleshooting
+## � Troubleshooting
 
 ### Common Issues
 
@@ -611,10 +712,61 @@ open http://localhost:8000/docs
    - Verify uploads directory exists and is writable
    - Resume is required before starting interview
 
+8. **Resume Screening / Top-K Ranking Issues**
+   - **ChromaDB Errors**: Ensure `resume_db` directory is writable
+   - **Embedding Failures**: Verify Azure embedding deployment (text-embedding-3-large)
+   - **No Results Returned**: Check if PDFs have extractable text (not scanned images)
+   - **Low Similarity Scores**: JD might be too generic - make it more specific
+   - **Top-K = 0 Results**: Ensure top_k slider is set correctly (minimum: 1)
+   - **All Scores Similar**: Resumes might be too similar - diversify candidate pool
+   - **Slow Processing**: Large batch + GPU processing - normal for 20+ resumes
+
 ### Debug Tools
 - **Admin Debug Page**: Navigate to "Debug Config" in admin sidebar
 - **Backend Logs**: Check terminal output for detailed error messages
 - **API Health**: Visit `http://localhost:8000/health`
+
+---
+
+## ❓ FAQ - Resume Screening
+
+### Q: How is the top-K system different from the old match scoring?
+**A:** The old system processed each resume individually and returned all results with match scores. The new system processes all resumes in batch, ranks them by semantic similarity, and returns only the top K most similar candidates. This reduces information overload and focuses attention on the best matches.
+
+### Q: What is "similarity score" vs "match score"?
+**A:** 
+- **Match Score (old)**: Simple percentage based on keyword matching
+- **Similarity Score (new)**: Semantic similarity using AI embeddings (0-100%), more precise (e.g., 87.3%)
+
+### Q: How many resumes can I upload at once?
+**A:** You can upload up to 100+ resumes. Processing time increases with more resumes (~1 second per resume). The system will analyze all of them and return only your selected top K.
+
+### Q: Can I change the number of top candidates returned?
+**A:** Yes! Use the top-K slider in the UI (1-20) or the `top_k` parameter in the API. Default is 5.
+
+### Q: What if I upload fewer resumes than top_k?
+**A:** The system will return all uploaded resumes, ranked by similarity.
+
+### Q: Why are all my similarity scores similar (e.g., 55-60%)?
+**A:** This usually means:
+1. The job description is too generic - make it more specific
+2. The resumes are all similar quality - try diversifying your candidate pool
+3. The resumes don't match the JD well - consider adjusting the JD or sourcing different candidates
+
+### Q: Does the system save all resumes or just top K?
+**A:** Only the top K resumes are saved to the database and file system. All resumes are analyzed, but only the best matches are stored.
+
+### Q: Can I see the resumes that weren't in the top K?
+**A:** No, only top K results are saved. If you need to review more candidates, increase the top_k value and re-run the screening.
+
+### Q: How accurate is the ranking?
+**A:** The ranking uses state-of-the-art semantic similarity (Azure OpenAI embeddings + ChromaDB). Accuracy depends on:
+- Quality of job description (detailed = better)
+- Resume text quality (clear formatting = better)
+- Relevance of candidates to the role
+
+### Q: Does ChromaDB slow down over time?
+**A:** ChromaDB is designed for efficient vector search. Performance remains consistent even with thousands of stored resumes.
 
 ---
 
@@ -633,7 +785,17 @@ open http://localhost:8000/docs
 
 ## 🆕 Latest Updates
 
-###  Enhanced Interview Experience
+### 🏆 Top-K Resume Ranking System (NEW!)
+- ✅ **Batch Processing** - Process all resumes together for accurate ranking
+- ✅ **Top-K Selection** - Return only the most similar candidates (configurable: 1-20)
+- ✅ **Semantic Similarity** - Azure OpenAI embeddings + ChromaDB vector search
+- ✅ **Ranking Positions** - Clear #1, #2, #3 rankings for top candidates
+- ✅ **Precise Scores** - Similarity percentages with decimals (87.3%)
+- ✅ **Scalable** - Upload 100 resumes, get top 10 matches
+- ✅ **Better UX** - Reduces information overload, focuses on best matches
+- ✅ **Configurable Slider** - Recruiters choose how many top candidates to see
+
+### 🎤 Enhanced Interview Experience
 - ✅ **Resume-Based Personalization** - Questions generated from candidate's resume + JD
 - ✅ **Interview Preferences** - Audio/Text mode selection for both interviewer and candidate
 - ✅ **AI Recruiter Assistant** - Sidebar chatbot powered by Azure OpenAI

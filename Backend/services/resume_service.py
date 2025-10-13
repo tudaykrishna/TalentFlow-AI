@@ -1,6 +1,13 @@
 """Resume Screening Service (Chroma + Azure embeddings)
-This version follows hi4.py's Chroma + AzureOpenAI embedding setup but keeps
-the higher-level screening flow (extract -> embed -> upsert/query).
+
+This service implements a top-K ranking system for resume screening:
+1. Extracts text from PDF resumes
+2. Generates embeddings using Azure OpenAI
+3. Stores resume embeddings in ChromaDB vector store
+4. Ranks all resumes by semantic similarity to job description
+5. Returns top K most similar candidates
+
+Uses Azure OpenAI for embeddings and ChromaDB for vector storage.
 """
 
 import os
@@ -222,80 +229,194 @@ class ResumeScreenerService:
             logger.error("❌ Error querying Chroma: %s", e)
             raise
 
-    async def screen_resume(self, jd_text: str, resume_text: str) -> Tuple[Dict, Dict]:
+    def _extract_candidate_name(self, resume_text: str) -> str:
+        """Extract candidate name from resume text using heuristics."""
+        candidate_name = "Unknown"
+        try:
+            first_lines = [l.strip() for l in (resume_text or "").splitlines() if l.strip()]
+            if first_lines:
+                potential_name = first_lines[0]
+                # If first line is short and likely a name, use it
+                if 1 <= len(potential_name.split()) <= 5 and len(potential_name) < 60:
+                    candidate_name = potential_name
+        except Exception as e:
+            logger.debug("Error extracting candidate name: %s", e)
+        return candidate_name
+
+    def _calculate_similarity_score(self, distance: float) -> float:
         """
-        Main screening: compute embeddings for resume & JD, upsert resume, query with JD to derive match score.
-        Returns: (screening_result_dict, candidate_data_like_dict)
+        Convert distance to similarity score (0-100).
+        
+        ChromaDB uses L2 (Euclidean) distance by default for embeddings.
+        For normalized embeddings, this is equivalent to cosine distance.
+        Distance of 0 = identical vectors, higher values = more different.
+        """
+        # Convert distance to similarity percentage
+        # Using exponential decay for better score distribution
+        similarity = max(0.0, min(100.0, 100.0 * (1.0 - min(distance, 2.0) / 2.0)))
+        return round(similarity, 2)
+
+    async def process_resume(self, resume_text: str, resume_filename: str) -> Tuple[str, List[float], str, str]:
+        """
+        Process a single resume: extract name, generate embedding, create ID.
+        Returns: (resume_id, embedding, candidate_name, resume_text)
         """
         try:
-            # Simple heuristic extraction for candidate name if no LLM available
-            candidate_name = "Unknown"
-            # Quick attempt: look for lines with capitalized words (very naive)
-            sometimes_name = None
-            try:
-                first_lines = [l.strip() for l in (resume_text or "").splitlines() if l.strip()]
-                if first_lines:
-                    sometimes_name = first_lines[0]
-                    # if first line is short and likely a name, use it
-                    if 1 <= len(sometimes_name.split()) <= 5 and len(sometimes_name) < 60:
-                        candidate_name = sometimes_name
-            except Exception:
-                pass
-
-            # Embeddings
-            jd_embedding = self._get_embedding(jd_text or "")
+            # Extract candidate name
+            candidate_name = self._extract_candidate_name(resume_text)
+            
+            # Generate embedding
             resume_embedding = self._get_embedding(resume_text or "")
-
-            # Build deterministic resume id (name + short hash)
+            
+            # Build deterministic resume id
             content_hash = hashlib.sha1((resume_text or "").encode("utf-8", errors="ignore")).hexdigest()[:8]
-            resume_id = f"{(candidate_name or 'resume')}_{content_hash}"
+            resume_id = f"{candidate_name.replace(' ', '_')}_{content_hash}"
+            
+            logger.info(f"✅ Processed resume: {resume_filename} -> {candidate_name}")
+            
+            return resume_id, resume_embedding, candidate_name, resume_text
+            
+        except Exception as e:
+            logger.error(f"❌ Error processing resume {resume_filename}: %s", e)
+            raise
 
-            # Upsert into chroma
-            self._chroma_upsert_resume(resume_id=resume_id, resume_text=resume_text or "", embedding=resume_embedding)
-
-            # Query chroma with JD embedding
-            results = self._chroma_query(query_embedding=jd_embedding, top_k=1)
-
-            match_score = 0
-            if results and results.get("distances"):
+    async def rank_resumes(
+        self, 
+        jd_text: str, 
+        resumes_data: List[Tuple[str, str, str]],  # List of (filename, content_bytes, resume_text)
+        top_k: int = 5
+    ) -> List[Dict]:
+        """
+        Rank all resumes against JD and return top K most similar ones.
+        
+        Args:
+            jd_text: Job description text
+            resumes_data: List of tuples (filename, content_bytes, resume_text)
+            top_k: Number of top candidates to return (default: 5)
+            
+        Returns:
+            List of dicts with resume info and similarity scores, sorted by similarity (highest first)
+        
+        Raises:
+            ValueError: If inputs are invalid
+            Exception: If ranking process fails
+        """
+        try:
+            # Input validation
+            if not jd_text or len(jd_text.strip()) < 20:
+                raise ValueError("Job description must contain at least 20 characters")
+            
+            if not resumes_data:
+                logger.warning("No resumes provided for ranking")
+                return []
+            
+            if top_k < 1:
+                raise ValueError("top_k must be at least 1")
+            
+            logger.info(f"🔍 Ranking {len(resumes_data)} resumes against JD (returning top {top_k})")
+            
+            # Generate JD embedding once
+            jd_embedding = self._get_embedding(jd_text or "")
+            
+            # Process all resumes and collect data
+            processed_resumes = []
+            for filename, content_bytes, resume_text in resumes_data:
                 try:
-                    distances = results["distances"][0]
-                    if distances:
-                        distance = float(distances[0])
-                        similarity = max(0.0, min(1.0, 1.0 - distance))
-                        match_score = int(round(similarity * 100))
-                except Exception:
-                    match_score = 0
-
-            # Status buckets
-            if match_score >= 80:
-                status = "Strong Match"
-            elif match_score >= 60:
-                status = "Potential Fit"
-            else:
-                status = "Not a Fit"
-
-            # Build summary
-            summary = (
-                "Semantic similarity between job description and resume computed via embeddings. "
-                f"Top match distance converted to score: {match_score}. "
-            )
-
-            screening_result = {
-                "match_score": match_score,
-                "summary": summary,
-                "status": status,
-            }
-
-            candidate_data = {
-                "name": candidate_name,
-                "extracted_lines_sample": (first_lines[:5] if 'first_lines' in locals() else [])
-            }
-
-            return screening_result, candidate_data
+                    resume_id, resume_embedding, candidate_name, resume_text_clean = await self.process_resume(
+                        resume_text, filename
+                    )
+                    
+                    # Store in ChromaDB
+                    self._chroma_upsert_resume(
+                        resume_id=resume_id,
+                        resume_text=resume_text_clean,
+                        embedding=resume_embedding
+                    )
+                    
+                    processed_resumes.append({
+                        "filename": filename,
+                        "content_bytes": content_bytes,
+                        "resume_id": resume_id,
+                        "resume_text": resume_text_clean,
+                        "embedding": resume_embedding,
+                        "candidate_name": candidate_name
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"❌ Failed to process resume {filename}: %s", e)
+                    # Continue with other resumes
+                    continue
+            
+            if not processed_resumes:
+                logger.warning("No resumes were successfully processed")
+                return []
+            
+            # Calculate similarity for all resumes
+            similarities = []
+            for resume_data in processed_resumes:
+                try:
+                    # Calculate cosine similarity using ChromaDB query
+                    results = self._chroma_query(query_embedding=jd_embedding, top_k=len(processed_resumes))
+                    
+                    # Find this resume's distance in the results
+                    distance = None
+                    if results and results.get("ids") and results.get("distances"):
+                        for i, result_id in enumerate(results["ids"][0]):
+                            if result_id == resume_data["resume_id"]:
+                                distance = results["distances"][0][i]
+                                break
+                    
+                    if distance is not None:
+                        similarity_score = self._calculate_similarity_score(distance)
+                    else:
+                        # Fallback: calculate similarity manually if not in results
+                        similarity_score = 50.0  # Default middle score
+                        logger.warning(f"Could not find distance for {resume_data['resume_id']}, using default")
+                    
+                    similarities.append({
+                        "filename": resume_data["filename"],
+                        "content_bytes": resume_data["content_bytes"],
+                        "resume_id": resume_data["resume_id"],
+                        "resume_text": resume_data["resume_text"],
+                        "candidate_name": resume_data["candidate_name"],
+                        "similarity_score": similarity_score,
+                        "distance": distance if distance is not None else 1.0
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error calculating similarity for {resume_data['candidate_name']}: %s", e)
+                    continue
+            
+            # Sort by similarity score (highest first)
+            similarities.sort(key=lambda x: x["similarity_score"], reverse=True)
+            
+            # Return top K
+            top_candidates = similarities[:top_k]
+            
+            logger.info(f"✅ Top {len(top_candidates)} candidates selected from {len(similarities)} total")
+            
+            # Add ranking
+            for rank, candidate in enumerate(top_candidates, 1):
+                candidate["rank"] = rank
+                # Determine status based on similarity
+                if candidate["similarity_score"] >= 80:
+                    candidate["status"] = "Strong Match"
+                elif candidate["similarity_score"] >= 60:
+                    candidate["status"] = "Potential Fit"
+                else:
+                    candidate["status"] = "Possible Match"
+                
+                # Generate summary
+                candidate["summary"] = (
+                    f"Ranked #{rank} out of {len(similarities)} candidates. "
+                    f"Semantic similarity score: {candidate['similarity_score']:.1f}%. "
+                    f"This candidate shows {candidate['status'].lower()} with the job requirements."
+                )
+            
+            return top_candidates
 
         except Exception as e:
-            logger.error("❌ Error in screen_resume: %s", e)
+            logger.error("❌ Error in rank_resumes: %s", e)
             raise
 
 # Export a global instance (routes import this)
