@@ -171,14 +171,16 @@ Recruiter-specific interfaces for managing the entire recruitment process.
 - **AI Integration**: Azure OpenAI for content generation, FPDF for PDF creation
 
 **`resume_screener.py`**
-- **Purpose**: Batch resume screening and candidate matching
+- **Purpose**: Batch resume screening with top-K ranking system
 - **Functionality**: 
   - Upload multiple PDF resumes
-  - AI-powered candidate matching against job descriptions
-  - Match score calculation (0-100%)
+  - AI-powered semantic similarity ranking using Azure OpenAI embeddings + ChromaDB
+  - Top-K selection slider (1-20 candidates, default: 5)
+  - Similarity score calculation (0-100% with decimals)
+  - Returns only the most similar candidates
   - Detailed analysis and recommendations
-  - CSV export for results
-- **AI Integration**: Azure OpenAI for intelligent resume analysis
+  - CSV export for top candidates
+- **AI Integration**: Azure OpenAI embeddings (text-embedding-3-large) + ChromaDB vector search
 
 **`interview_assignment.py`**
 - **Purpose**: Interview assignment and management interface
@@ -310,8 +312,8 @@ Pydantic data models for request/response validation and database schemas.
 - **Contains**: 
   - Resume screening request schemas
   - Candidate profile extraction models
-  - Screening result and match score models
-  - Batch processing models
+  - Screening result with similarity_score and rank fields
+  - Batch processing models with top_k parameter
 - **AI Integration**: Structured data extraction models for LLM parsing
 
 **`interview_model.py`**
@@ -350,12 +352,12 @@ FastAPI route handlers for all API endpoints.
 - **Features**: PDF generation, file storage, recruiter filtering
 
 **`resume_routes.py`**
-- **Purpose**: Resume screening and candidate matching
+- **Purpose**: Resume screening with top-K ranking
 - **Endpoints**: 
-  - `POST /resume/screen` - Batch resume screening
+  - `POST /resume/screen` - Batch resume screening with top_k parameter
   - `GET /resume/results/{recruiter_id}` - Get screening results
   - `GET /resume/detail/{resume_id}` - Detailed screening result
-- **Features**: PDF processing, AI analysis, batch operations
+- **Features**: PDF processing, ChromaDB vector storage, top-K selection, batch ranking
 
 **`interview_routes.py`**
 - **Purpose**: Enhanced AI Interview management and voice services
@@ -409,17 +411,19 @@ Business logic layer containing all AI and processing services.
 - **Enhanced Features**: Improved .env loading from project root
 
 **`resume_service.py`**
-- **Purpose**: Resume screening and candidate analysis
+- **Purpose**: Resume screening with top-K ranking system
 - **Functionality**: 
-  - PDF text extraction using PyPDF2
-  - Structured data extraction from resumes
-  - AI-powered candidate matching against job descriptions
-  - Match score calculation and recommendation generation
+  - PDF text extraction using pypdf/PyPDF2
+  - Embedding generation using Azure OpenAI (text-embedding-3-large)
+  - Vector storage in ChromaDB
+  - Semantic similarity search with L2 distance
+  - Top-K candidate selection and ranking
+  - Candidate name extraction and recommendation generation
 - **AI Integration**: 
-  - Uses Azure OpenAI for intelligent processing
-  - LangChain for structured data extraction
-  - Pydantic models for data validation
-- **Enhanced Features**: Improved environment loading
+  - Azure OpenAI embeddings (3072 dimensions)
+  - ChromaDB for vector storage and similarity search
+  - Batch processing for efficient ranking
+- **Enhanced Features**: rank_resumes(), process_resume(), similarity scoring
 
 **`interview_service.py`**
 - **Purpose**: Enhanced AI Interview orchestration with resume personalization
@@ -511,15 +515,17 @@ Business logic layer containing all AI and processing services.
 - **Workflow**: Input → AI Generation → Preview → Download/Save
 
 **`Recruiter/resume_screener.py`**
-- **Purpose**: Batch resume analysis and candidate matching
+- **Purpose**: Batch resume analysis with top-K ranking
 - **Features**: 
   - Multiple resume upload (PDF)
   - JD selection or manual input
+  - Top-K slider (1-20, default: 5)
   - Batch processing with progress indicators
-  - Match score display (0-100%)
+  - Similarity score display with decimals (e.g., 87.3%)
+  - Ranking positions (#1, #2, #3...)
   - Detailed candidate analysis
-  - CSV export functionality
-- **AI Processing**: Azure OpenAI-based structured data extraction and matching
+  - CSV export for top candidates only
+- **AI Processing**: Azure OpenAI embeddings + ChromaDB semantic similarity ranking
 
 **`Recruiter/interview_assignment.py`**
 - **Purpose**: Interview assignment with enhanced tracking
@@ -616,7 +622,7 @@ jd_generator.py → jd_routes.py → jd_service.py → Azure OpenAI → PDF Gene
 
 **Resume Screening Flow:**
 ```
-resume_screener.py → resume_routes.py → resume_service.py → Azure OpenAI → Analysis
+resume_screener.py → resume_routes.py → resume_service.py → Azure OpenAI Embeddings → ChromaDB → Top-K Ranking
 ```
 
 ### AI Service Integration
@@ -629,9 +635,9 @@ resume_screener.py → resume_routes.py → resume_service.py → Azure OpenAI �
 - **Recruiter Chatbot**: Intelligent platform assistance
 
 **Azure OpenAI Integration:**
-- **Resume Screening**: Intelligent candidate matching and analysis
-- **Structured Data Extraction**: Resume and JD analysis using GPT-4o-mini
-- **Candidate Matching**: AI-powered scoring and recommendations
+- **Resume Screening**: Semantic similarity using text-embedding-3-large embeddings + ChromaDB
+- **Top-K Ranking**: Vector search for finding most similar candidates
+- **Candidate Analysis**: Recommendation generation using GPT-4o-mini
 
 ---
 
@@ -742,9 +748,10 @@ resume_screener.py → resume_routes.py → resume_service.py → Azure OpenAI �
   candidate_name: String,
   candidate_email: String,
   resume_path: String,
-  match_score: Number (0-100),
+  similarity_score: Number (0-100, with decimals),
+  rank: Number (1, 2, 3...),
   summary: String,
-  status: "Strong Match" | "Potential Fit" | "Not a Fit",
+  status: "Strong Match" | "Potential Fit" | "Possible Match",
   candidate_data: Object,
   created_at: Date
 }
@@ -767,7 +774,7 @@ resume_screener.py → resume_routes.py → resume_service.py → Azure OpenAI �
 
 ### AI Service Orchestration
 - **Interview Flow**: interview_service.py orchestrates all AI operations
-- **Resume Analysis**: resume_service.py handles structured data extraction
+- **Resume Analysis**: resume_service.py handles embedding generation, vector storage, and top-K ranking
 - **Voice Processing**: Separate services for STT (whisper) and TTS (Google)
 - **Prompt Engineering**: Consistent LangChain templates across services
 

@@ -76,20 +76,33 @@ with tab1:
     
     st.divider()
     
-    # Step 3: Screen Resumes
-    if st.button("🚀 Screen Resumes", type="primary", use_container_width=True):
+    # Step 3: Configure Top K
+    st.write("**Step 3: Select Number of Top Candidates**")
+    top_k = st.slider(
+        "How many top candidates to return?",
+        min_value=1,
+        max_value=min(20, len(uploaded_files)) if uploaded_files else 10,
+        value=5,
+        help="The system will rank all resumes and return only the top K most similar candidates"
+    )
+    
+    st.divider()
+    
+    # Step 4: Screen Resumes
+    if st.button("🚀 Rank Resumes & Get Top Candidates", type="primary", use_container_width=True):
         if not jd_id and not jd_text:
             st.error("❌ Please provide a Job Description")
         elif not uploaded_files:
             st.error("❌ Please upload at least one resume")
         else:
-            with st.spinner("🤖 Screening resumes... This may take a while for multiple resumes."):
+            with st.spinner(f"🤖 Analyzing {len(uploaded_files)} resumes and ranking by similarity... This may take a while."):
                 try:
                     # Prepare files and data
                     files = [('resumes', (file.name, file, 'application/pdf')) for file in uploaded_files]
                     
                     data = {
-                        'recruiter_id': recruiter_id
+                        'recruiter_id': recruiter_id,
+                        'top_k': top_k
                     }
                     
                     if jd_id:
@@ -108,7 +121,7 @@ with tab1:
                     if response.status_code == 200:
                         results = response.json()
                         st.session_state['screening_results'] = results
-                        st.success(f"✅ Successfully screened {results['total_processed']} resumes!")
+                        st.success(f"✅ Successfully ranked {results['total_processed']} resumes! Showing top {results['top_k']} candidates.")
                         st.rerun()
                     else:
                         st.error(f"❌ Error: {response.json().get('detail', 'Unknown error')}")
@@ -122,25 +135,29 @@ with tab1:
     # Display results
     if 'screening_results' in st.session_state:
         st.divider()
-        st.subheader("📊 Screening Results")
+        st.subheader("🏆 Top Candidates")
         
         results = st.session_state['screening_results']
         
         if results.get('job_title'):
             st.write(f"**Position:** {results['job_title']}")
         
-        st.write(f"**Total Candidates Screened:** {results['total_processed']}")
+        st.write(f"**Total Resumes Analyzed:** {results['total_processed']}")
+        st.write(f"**Top Candidates Shown:** {results['top_k']}")
         
-        # Convert to DataFrame
+        # Convert to DataFrame (ensure columns exist even if no results)
         df = pd.DataFrame([
             {
-                'Candidate Name': r['candidate_name'],
-                'Match Score': r['match_score'],
-                'Status': r['status'],
-                'Summary': r['summary'][:100] + '...' if len(r['summary']) > 100 else r['summary']
+                'Rank': r.get('rank', 0),
+                'Candidate Name': r.get('candidate_name', ''),
+                'Similarity Score': f"{r.get('similarity_score', 0):.1f}%",
+                'Status': r.get('status', ''),
+                'Summary': (r.get('summary', '')[:100] + '...') if len(r.get('summary', '')) > 100 else r.get('summary', '')
             }
-            for r in results['results']
+            for r in results.get('results', [])
         ])
+        if df.empty:
+            df = pd.DataFrame(columns=['Rank', 'Candidate Name', 'Similarity Score', 'Status', 'Summary'])
         
         # Color code by status
         def color_status(val):
@@ -149,20 +166,29 @@ with tab1:
             elif val == 'Potential Fit':
                 return 'background-color: #fff3cd'
             else:
-                return 'background-color: #f8d7da'
+                return 'background-color: #fff9e6'
         
-        st.dataframe(
-            df.style.applymap(color_status, subset=['Status']),
-            use_container_width=True,
-            hide_index=True
-        )
+        # Apply styling only if 'Status' column exists
+        styled = df.style.applymap(color_status, subset=['Status']) if 'Status' in df.columns else df
+        st.dataframe(styled, use_container_width=True, hide_index=True)
+        
+        # Metrics display
+        if results.get('results'):
+            cols = st.columns(3)
+            top_candidate = results['results'][0]
+            with cols[0]:
+                st.metric("🥇 Top Candidate", top_candidate['candidate_name'])
+            with cols[1]:
+                st.metric("Similarity Score", f"{top_candidate['similarity_score']:.1f}%")
+            with cols[2]:
+                st.metric("Status", top_candidate['status'])
         
         # Download as CSV
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="📥 Download Results as CSV",
+            label="📥 Download Top Candidates as CSV",
             data=csv,
-            file_name=f"screening_results_{results.get('job_title', 'job')}.csv",
+            file_name=f"top_candidates_{results.get('job_title', 'job')}.csv",
             mime="text/csv",
             use_container_width=True
         )
@@ -170,8 +196,8 @@ with tab1:
         # Detailed view
         with st.expander("👁️ View Detailed Results"):
             for r in results['results']:
-                st.write(f"### {r['candidate_name']}")
-                st.write(f"**Match Score:** {r['match_score']}%")
+                st.write(f"### 🏅 Rank #{r['rank']}: {r['candidate_name']}")
+                st.write(f"**Similarity Score:** {r['similarity_score']:.1f}%")
                 st.write(f"**Status:** {r['status']}")
                 st.write(f"**Summary:** {r['summary']}")
                 st.divider()
@@ -189,8 +215,19 @@ with tab2:
                 # Convert to DataFrame
                 df_all = pd.DataFrame(all_results)
                 
+                # Display columns (handle both old and new format)
+                display_cols = ['candidate_name', 'status', 'created_at']
+                if 'similarity_score' in df_all.columns:
+                    display_cols.insert(1, 'similarity_score')
+                    display_cols.insert(2, 'rank')
+                elif 'match_score' in df_all.columns:
+                    display_cols.insert(1, 'match_score')
+                
+                # Filter to only existing columns
+                display_cols = [col for col in display_cols if col in df_all.columns]
+                
                 st.dataframe(
-                    df_all[['candidate_name', 'match_score', 'status', 'created_at']],
+                    df_all[display_cols],
                     use_container_width=True,
                     hide_index=True
                 )

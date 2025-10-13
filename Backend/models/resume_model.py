@@ -1,19 +1,18 @@
-"""Resume Screening Data Models"""
+"""Resume Screening Data Models (cleaned / pydantic v2 compatible)"""
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List, Dict, Literal, Annotated
 from datetime import datetime
-from bson import ObjectId
 from pydantic.functional_validators import BeforeValidator
 
-# Pydantic v2 compatible ObjectId handling
+# When storing ObjectId from Mongo, we accept str and validate via BeforeValidator
 PyObjectId = Annotated[str, BeforeValidator(str)]
 
 class CandidateResume(BaseModel):
     """Structured data extracted from a candidate's resume"""
     name: str = Field(description="The full name of the candidate")
-    skills: List[str] = Field(description="A list of skills possessed by the candidate")
-    work_experience: List[Dict] = Field(description="A list of previous work experiences")
-    total_experience_years: int = Field(description="Total years of professional experience")
+    skills: List[str] = Field(default_factory=list, description="A list of skills possessed by the candidate")
+    work_experience: List[Dict] = Field(default_factory=list, description="List of previous work experiences")
+    total_experience_years: int = Field(0, description="Total years of professional experience")
 
 class ScreeningResult(BaseModel):
     """The final output of the screening process"""
@@ -33,11 +32,10 @@ class ResumeInDB(BaseModel):
         populate_by_name=True,
         arbitrary_types_allowed=True
     )
-    
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
     recruiter_id: str
     jd_id: Optional[str] = None
-    jd_text: str
+    jd_text: Optional[str] = None
     candidate_name: str
     candidate_email: Optional[str] = None
     resume_path: str
@@ -48,16 +46,18 @@ class ResumeInDB(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class ResumeScreenResponse(BaseModel):
-    """Resume screening response"""
+    """Resume screening response (for API)"""
     candidate_name: str
-    match_score: int
+    similarity_score: float = Field(description="Similarity score from 0-100")
+    rank: int = Field(description="Ranking position (1 = most similar)")
     summary: str
     status: str
     resume_path: str
-    
-class BatchScreenResponse(BaseModel):
-    """Batch screening response"""
-    results: List[ResumeScreenResponse]
-    total_processed: int
-    job_title: Optional[str] = None
 
+class BatchScreenResponse(BaseModel):
+    """Batch screening response - returns top K most similar candidates"""
+    results: List[ResumeScreenResponse]
+    total_uploaded: int = Field(description="Total number of resumes uploaded")
+    total_processed: int = Field(description="Total number successfully processed")
+    top_k: int = Field(description="Number of top candidates returned")
+    job_title: Optional[str] = None

@@ -1,195 +1,423 @@
-"""Resume Screening Service"""
+"""Resume Screening Service (Chroma + Azure embeddings)
+
+This service implements a top-K ranking system for resume screening:
+1. Extracts text from PDF resumes
+2. Generates embeddings using Azure OpenAI
+3. Stores resume embeddings in ChromaDB vector store
+4. Ranks all resumes by semantic similarity to job description
+5. Returns top K most similar candidates
+
+Uses Azure OpenAI for embeddings and ChromaDB for vector storage.
+"""
+
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from langchain_openai import AzureChatOpenAI
-from langchain.prompts import PromptTemplate
-from langchain.output_parsers import PydanticOutputParser
-from pydantic import BaseModel, Field
-from typing import List, Dict, Literal
 import logging
-import PyPDF2
 import io
-import json
+import hashlib
+from typing import List, Dict, Tuple
 
-# Load .env from project root
-project_root = Path(__file__).resolve().parent.parent.parent
-env_path = project_root / ".env"
-if env_path.exists():
-    load_dotenv(env_path, override=True)
-else:
-    load_dotenv(override=True)
+# Try to prefer pypdf PdfReader (more modern); fallback to PyPDF2
+try:
+    from pypdf import PdfReader as PypdfReader
+except Exception:
+    PypdfReader = None
+
+try:
+    import PyPDF2
+    PyPDF2_available = True
+except Exception:
+    PyPDF2_available = False
+
+# Azure OpenAI embeddings client (same as hi4.py)
+from openai import AzureOpenAI
+import chromadb
+from chromadb.config import Settings
+
+# Lightweight LLM extraction is kept but optional; if not available, extraction falls back to heuristics.
+# To avoid a hard dependency we wrap usage and provide fallbacks.
+try:
+    from langchain_openai import AzureChatOpenAI
+    from langchain.prompts import PromptTemplate
+    from langchain.output_parsers import PydanticOutputParser
+    from pydantic import BaseModel, Field
+    from typing import Literal
+    LLM_AVAILABLE = True
+except Exception:
+    AzureChatOpenAI = None
+    PromptTemplate = None
+    PydanticOutputParser = None
+    BaseModel = object
+    Field = lambda *a, **k: None
+    Literal = None
+    LLM_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+logger.setLevel(os.getenv("LOGLEVEL", "INFO"))
 
-# Pydantic Models for Structured Data
-class JobDescription(BaseModel):
-    """Structured data extracted from a job description"""
-    required_skills: List[str] = Field(description="A list of essential skills required for the job")
-    preferred_skills: List[str] = Field(description="A list of preferred but not mandatory skills")
-    years_of_experience: int = Field(description="The minimum number of years of experience required")
+# --- load .env from sensible defaults: current working dir or package root ---
+# This is robust whether you run uvicorn from project root or as a module
+load_dotenv()
 
-class CandidateResume(BaseModel):
-    """Structured data extracted from a candidate's resume"""
-    name: str = Field(description="The full name of the candidate")
-    skills: List[str] = Field(description="A list of skills possessed by the candidate")
-    work_experience: List[Dict] = Field(description="A list of previous work experiences, including job title, company, and duration in years")
-    total_experience_years: int = Field(description="The total number of years of professional experience")
+# Determine project root (if running as installed module it may be different)
+_project_root = Path.cwd()
 
-class ScreeningResult(BaseModel):
-    """The final output of the screening process"""
-    match_score: int = Field(description="A score from 0 to 100 representing the candidate's suitability", ge=0, le=100)
-    summary: str = Field(description="A concise summary explaining the reasoning behind the score, highlighting strengths and weaknesses")
-    status: Literal["Strong Match", "Potential Fit", "Not a Fit"] = Field(description="The final recommendation status")
-
+# Embedding model default (matches hi4.py)
+EMBED_MODEL = os.getenv("AZURE_EMBEDDING_MODEL", "text-embedding-3-large")
 
 class ResumeScreenerService:
-    """AI-powered Resume Screening Service"""
-    
     def __init__(self):
-        """Initialize the Resume Screener with Azure OpenAI model"""
+        """Initialize clients (Azure OpenAI embeddings + Chroma)"""
         try:
-            # Get environment variables
-            api_key = os.getenv("AZURE_OPENAI_API_KEY")
-            api_version = os.getenv("AZURE_OPENAI_API_VERSION")
             azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-            deployment_name = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME")
-            
-            # Debug logging
-            logger.info(f"Initializing Resume Screener with:")
-            logger.info(f"  Endpoint: {azure_endpoint}")
-            logger.info(f"  Deployment: {deployment_name}")
-            logger.info(f"  API Version: {api_version}")
-            
-            # Validate required configs
-            if not all([api_key, api_version, azure_endpoint, deployment_name]):
+            api_key = os.getenv("AZURE_OPENAI_API_KEY")
+            api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
+            # chat/deployment name (optional if not doing complex LLM extraction)
+            chat_deployment = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME")
+
+            if not all([azure_endpoint, api_key]):
                 missing = []
-                if not api_key: missing.append("AZURE_OPENAI_API_KEY")
-                if not api_version: missing.append("AZURE_OPENAI_API_VERSION")
                 if not azure_endpoint: missing.append("AZURE_OPENAI_ENDPOINT")
-                if not deployment_name: missing.append("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME")
+                if not api_key: missing.append("AZURE_OPENAI_API_KEY")
                 raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
-            
-            self.llm = AzureChatOpenAI(
-                api_key=api_key,
-                api_version=api_version,
+
+            # Azure embeddings client (same usage as hi4.py)
+            self.embedding_client = AzureOpenAI(
                 azure_endpoint=azure_endpoint,
-                deployment_name=deployment_name,
-                temperature=0.0,
-                model_kwargs={
-                    "response_format": {"type": "json_object"},
-                }
+                api_key=api_key,
+                api_version=api_version
             )
-            logger.info("✅ Resume Screener initialized successfully with Azure OpenAI")
-        except Exception as e:
-            logger.error(f"❌ Error initializing Azure OpenAI model: {e}")
-            raise
+            self.embedding_model = EMBED_MODEL
+            logger.info("✅ AzureOpenAI embedding client initialized")
 
-    def extract_text_from_pdf(self, pdf_file) -> str:
-        """Extract text from PDF file"""
-        try:
-            if isinstance(pdf_file, bytes):
-                pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_file))
+            # Initialize Chroma client (persist directory similar to hi4.py)
+            persist_dir = str((_project_root / "resume_db").resolve())
+            os.makedirs(persist_dir, exist_ok=True)
+
+            persistent_client_cls = getattr(chromadb, "PersistentClient", None)
+            if persistent_client_cls is not None:
+                # Newer chromadb API
+                try:
+                    self.chroma_client = persistent_client_cls(path=persist_dir)
+                    logger.info("ℹ Using chromadb.PersistentClient with path=%s", persist_dir)
+                except Exception as e:
+                    # fallback to older Client API
+                    self.chroma_client = chromadb.Client(Settings(persist_directory=persist_dir))
+                    logger.warning("⚠ PersistentClient init failed, falling back to chromadb.Client: %s", e)
             else:
-                pdf_reader = PyPDF2.PdfReader(pdf_file)
-            
-            text = ""
-            for page in pdf_reader.pages:
-                text += page.extract_text()
-            
-            return text.strip()
+                self.chroma_client = chromadb.Client(Settings(persist_directory=persist_dir))
+                logger.info("ℹ Using chromadb.Client with persist_directory=%s", persist_dir)
+
+            self.resume_collection = self.chroma_client.get_or_create_collection(name="resumes")
+            logger.info("✅ Chroma DB initialized with collection 'resumes'")
+
+            # Optional LLM (if available). Keep it read-only: used for structured extraction when present.
+            if LLM_AVAILABLE and chat_deployment:
+                try:
+                    self.llm = AzureChatOpenAI(
+                        api_key=api_key,
+                        api_version=api_version,
+                        azure_endpoint=azure_endpoint,
+                        deployment_name=chat_deployment,
+                        temperature=0.0,
+                        model_kwargs={"response_format": {"type": "json_object"}}
+                    )
+                    logger.info("✅ AzureChatOpenAI (langchain) initialized for optional extraction")
+                except Exception as e:
+                    self.llm = None
+                    logger.warning("⚠ Failed to initialize AzureChatOpenAI: %s", e)
+            else:
+                self.llm = None
+                logger.info("ℹ LLM extraction disabled (langchain not available or deployment not set)")
         except Exception as e:
-            logger.error(f"❌ Error extracting text from PDF: {e}")
+            logger.error("❌ Error initializing ResumeScreenerService: %s", e)
             raise
 
-    def _extract_structured_data(self, text: str, pydantic_model):
-        """Generic function to extract structured data from text using a Pydantic model"""
-        parser = PydanticOutputParser(pydantic_object=pydantic_model)
-        
-        prompt = PromptTemplate(
-            template="You are an expert HR data analyst. Extract the relevant information from the document below and format it according to the provided JSON schema.\n{format_instructions}\nDocument:\n{document_text}",
-            input_variables=["document_text"],
-            partial_variables={"format_instructions": parser.get_format_instructions()},
-        )
-        
-        chain = prompt | self.llm
-        
+    def extract_text_from_pdf(self, pdf_bytes_or_file) -> str:
+        """Extract text from PDF bytes or file-like. Prefer pypdf, fallback to PyPDF2."""
         try:
-            output = chain.invoke({"document_text": text})
-            # Parse the JSON response from Azure OpenAI
-            parsed_output = parser.parse(output.content)
-            return parsed_output
-        except Exception as e:
-            logger.error(f"❌ Error during data extraction: {e}")
-            logger.error(f"Response content: {output.content if 'output' in locals() else 'N/A'}")
-            return None
+            # If given bytes convert to BytesIO
+            if isinstance(pdf_bytes_or_file, (bytes, bytearray)):
+                stream = io.BytesIO(pdf_bytes_or_file)
+            else:
+                stream = pdf_bytes_or_file  # assume file-like / path-like
 
-    async def screen_resume(self, jd_text: str, resume_text: str) -> ScreeningResult:
+            text = ""
+            # Try pypdf first
+            if PypdfReader is not None:
+                try:
+                    reader = PypdfReader(stream)
+                    for page in reader.pages:
+                        page_text = page.extract_text() or ""
+                        text += page_text
+                    text = text.strip()
+                    if text:
+                        return text
+                except Exception as e:
+                    logger.debug("pypdf extraction failed: %s", e)
+                    # reset stream if possible
+                    try:
+                        stream.seek(0)
+                    except Exception:
+                        pass
+
+            # Fallback to PyPDF2 if available
+            if PyPDF2_available:
+                try:
+                    if isinstance(stream, io.BytesIO):
+                        reader = PyPDF2.PdfReader(stream)
+                    else:
+                        # if a file path (str/Path) was passed
+                        reader = PyPDF2.PdfReader(stream)
+                    for page in reader.pages:
+                        page_text = page.extract_text() or ""
+                        text += page_text
+                    return (text or "").strip()
+                except Exception as e:
+                    logger.warning("PyPDF2 extraction failed: %s", e)
+                    return ""
+            else:
+                logger.warning("No PDF extraction library available (pypdf or PyPDF2)")
+                return ""
+        except Exception as e:
+            logger.error("Error extracting text from PDF: %s", e)
+            return ""
+
+    def _get_embedding(self, text: str) -> List[float]:
+        """Return embedding using AzureOpenAI client (consistent with hi4.py)."""
+        if not text:
+            return []
+        try:
+            resp = self.embedding_client.embeddings.create(
+                input=text,
+                model=self.embedding_model
+            )
+            return resp.data[0].embedding
+        except Exception as e:
+            logger.error("❌ Error generating embedding: %s", e)
+            raise
+
+    def _chroma_upsert_resume(self, resume_id: str, resume_text: str, embedding: List[float]):
+        if not embedding:
+            logger.warning("⚠ Empty embedding for %s; skipping upsert", resume_id)
+            return
+        try:
+            # Chroma's collection.add semantics differ across versions; this matches hi4.py usage
+            self.resume_collection.add(
+                ids=[resume_id],
+                embeddings=[embedding],
+                documents=[resume_text],
+                metadatas=[{"filename": resume_id}],
+            )
+            logger.info("✅ Stored resume vector in Chroma: %s", resume_id)
+        except Exception as e:
+            logger.error("❌ Error upserting to Chroma: %s", e)
+            raise
+
+    def _chroma_query(self, query_embedding: List[float], top_k: int = 1):
+        if not query_embedding:
+            return None
+        try:
+            results = self.resume_collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                include=["distances", "metadatas", "documents", "embeddings"],
+            )
+            return results
+        except Exception as e:
+            logger.error("❌ Error querying Chroma: %s", e)
+            raise
+
+    def _extract_candidate_name(self, resume_text: str) -> str:
+        """Extract candidate name from resume text using heuristics."""
+        candidate_name = "Unknown"
+        try:
+            first_lines = [l.strip() for l in (resume_text or "").splitlines() if l.strip()]
+            if first_lines:
+                potential_name = first_lines[0]
+                # If first line is short and likely a name, use it
+                if 1 <= len(potential_name.split()) <= 5 and len(potential_name) < 60:
+                    candidate_name = potential_name
+        except Exception as e:
+            logger.debug("Error extracting candidate name: %s", e)
+        return candidate_name
+
+    def _calculate_similarity_score(self, distance: float) -> float:
         """
-        Perform the two-step screening process: extraction and comparison
+        Convert distance to similarity score (0-100).
+        
+        ChromaDB uses L2 (Euclidean) distance by default for embeddings.
+        For normalized embeddings, this is equivalent to cosine distance.
+        Distance of 0 = identical vectors, higher values = more different.
+        """
+        # Convert distance to similarity percentage
+        # Using exponential decay for better score distribution
+        similarity = max(0.0, min(100.0, 100.0 * (1.0 - min(distance, 2.0) / 2.0)))
+        return round(similarity, 2)
+
+    async def process_resume(self, resume_text: str, resume_filename: str) -> Tuple[str, List[float], str, str]:
+        """
+        Process a single resume: extract name, generate embedding, create ID.
+        Returns: (resume_id, embedding, candidate_name, resume_text)
+        """
+        try:
+            # Extract candidate name
+            candidate_name = self._extract_candidate_name(resume_text)
+            
+            # Generate embedding
+            resume_embedding = self._get_embedding(resume_text or "")
+            
+            # Build deterministic resume id
+            content_hash = hashlib.sha1((resume_text or "").encode("utf-8", errors="ignore")).hexdigest()[:8]
+            resume_id = f"{candidate_name.replace(' ', '_')}_{content_hash}"
+            
+            logger.info(f"✅ Processed resume: {resume_filename} -> {candidate_name}")
+            
+            return resume_id, resume_embedding, candidate_name, resume_text
+            
+        except Exception as e:
+            logger.error(f"❌ Error processing resume {resume_filename}: %s", e)
+            raise
+
+    async def rank_resumes(
+        self, 
+        jd_text: str, 
+        resumes_data: List[Tuple[str, str, str]],  # List of (filename, content_bytes, resume_text)
+        top_k: int = 5
+    ) -> List[Dict]:
+        """
+        Rank all resumes against JD and return top K most similar ones.
         
         Args:
             jd_text: Job description text
-            resume_text: Resume text
+            resumes_data: List of tuples (filename, content_bytes, resume_text)
+            top_k: Number of top candidates to return (default: 5)
             
         Returns:
-            ScreeningResult: Screening result with match score and status
+            List of dicts with resume info and similarity scores, sorted by similarity (highest first)
+        
+        Raises:
+            ValueError: If inputs are invalid
+            Exception: If ranking process fails
         """
         try:
-            logger.info("Step 1: Extracting structured data from documents")
+            # Input validation
+            if not jd_text or len(jd_text.strip()) < 20:
+                raise ValueError("Job description must contain at least 20 characters")
             
-            # Extract data from Job Description
-            jd_data = self._extract_structured_data(jd_text, JobDescription)
-            if not jd_data:
-                raise ValueError("Failed to process Job Description")
+            if not resumes_data:
+                logger.warning("No resumes provided for ranking")
+                return []
             
-            logger.info("✅ Job Description data extracted")
-
-            # Extract data from Resume
-            resume_data = self._extract_structured_data(resume_text, CandidateResume)
-            if not resume_data:
-                raise ValueError("Failed to process Resume")
+            if top_k < 1:
+                raise ValueError("top_k must be at least 1")
             
-            logger.info("✅ Resume data extracted")
-
-            logger.info("Step 2: Comparing data and generating screening result")
+            logger.info(f"🔍 Ranking {len(resumes_data)} resumes against JD (returning top {top_k})")
             
-            comparison_parser = PydanticOutputParser(pydantic_object=ScreeningResult)
-
-            comparison_prompt = PromptTemplate(
-                template="""
-                You are an expert Senior Technical Recruiter with 15 years of experience.
-                Analyze the candidate's resume against the job description based on the structured data provided.
-                Provide a match score, a concise summary of your analysis, and a final status.
+            # Generate JD embedding once
+            jd_embedding = self._get_embedding(jd_text or "")
+            
+            # Process all resumes and collect data
+            processed_resumes = []
+            for filename, content_bytes, resume_text in resumes_data:
+                try:
+                    resume_id, resume_embedding, candidate_name, resume_text_clean = await self.process_resume(
+                        resume_text, filename
+                    )
+                    
+                    # Store in ChromaDB
+                    self._chroma_upsert_resume(
+                        resume_id=resume_id,
+                        resume_text=resume_text_clean,
+                        embedding=resume_embedding
+                    )
+                    
+                    processed_resumes.append({
+                        "filename": filename,
+                        "content_bytes": content_bytes,
+                        "resume_id": resume_id,
+                        "resume_text": resume_text_clean,
+                        "embedding": resume_embedding,
+                        "candidate_name": candidate_name
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"❌ Failed to process resume {filename}: %s", e)
+                    # Continue with other resumes
+                    continue
+            
+            if not processed_resumes:
+                logger.warning("No resumes were successfully processed")
+                return []
+            
+            # Calculate similarity for all resumes
+            similarities = []
+            for resume_data in processed_resumes:
+                try:
+                    # Calculate cosine similarity using ChromaDB query
+                    results = self._chroma_query(query_embedding=jd_embedding, top_k=len(processed_resumes))
+                    
+                    # Find this resume's distance in the results
+                    distance = None
+                    if results and results.get("ids") and results.get("distances"):
+                        for i, result_id in enumerate(results["ids"][0]):
+                            if result_id == resume_data["resume_id"]:
+                                distance = results["distances"][0][i]
+                                break
+                    
+                    if distance is not None:
+                        similarity_score = self._calculate_similarity_score(distance)
+                    else:
+                        # Fallback: calculate similarity manually if not in results
+                        similarity_score = 50.0  # Default middle score
+                        logger.warning(f"Could not find distance for {resume_data['resume_id']}, using default")
+                    
+                    similarities.append({
+                        "filename": resume_data["filename"],
+                        "content_bytes": resume_data["content_bytes"],
+                        "resume_id": resume_data["resume_id"],
+                        "resume_text": resume_data["resume_text"],
+                        "candidate_name": resume_data["candidate_name"],
+                        "similarity_score": similarity_score,
+                        "distance": distance if distance is not None else 1.0
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error calculating similarity for {resume_data['candidate_name']}: %s", e)
+                    continue
+            
+            # Sort by similarity score (highest first)
+            similarities.sort(key=lambda x: x["similarity_score"], reverse=True)
+            
+            # Return top K
+            top_candidates = similarities[:top_k]
+            
+            logger.info(f"✅ Top {len(top_candidates)} candidates selected from {len(similarities)} total")
+            
+            # Add ranking
+            for rank, candidate in enumerate(top_candidates, 1):
+                candidate["rank"] = rank
+                # Determine status based on similarity
+                if candidate["similarity_score"] >= 80:
+                    candidate["status"] = "Strong Match"
+                elif candidate["similarity_score"] >= 60:
+                    candidate["status"] = "Potential Fit"
+                else:
+                    candidate["status"] = "Possible Match"
                 
-                Job Requirements:
-                {jd_json}
-                
-                Candidate's Resume:
-                {resume_json}
-                
-                {format_instructions}
-                """,
-                input_variables=["jd_json", "resume_json"],
-                partial_variables={"format_instructions": comparison_parser.get_format_instructions()},
-            )
+                # Generate summary
+                candidate["summary"] = (
+                    f"Ranked #{rank} out of {len(similarities)} candidates. "
+                    f"Semantic similarity score: {candidate['similarity_score']:.1f}%. "
+                    f"This candidate shows {candidate['status'].lower()} with the job requirements."
+                )
             
-            comparison_chain = comparison_prompt | self.llm
-            
-            result_output = comparison_chain.invoke({
-                "jd_json": jd_data.model_dump_json(),
-                "resume_json": resume_data.model_dump_json()
-            })
-            
-            final_result = comparison_parser.parse(result_output.content)
-            
-            logger.info("✅ Screening completed successfully")
-            return final_result, resume_data
-            
+            return top_candidates
+
         except Exception as e:
-            logger.error(f"❌ Error during resume screening: {e}")
+            logger.error("❌ Error in rank_resumes: %s", e)
             raise
 
-# Global service instance
+# Export a global instance (routes import this)
 resume_screener_service = ResumeScreenerService()
-

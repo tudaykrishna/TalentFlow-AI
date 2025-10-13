@@ -336,7 +336,7 @@ try:
                     st.audio(audio_bytes, format="audio/wav")
                     
                     if st.button("🚀 Submit Voice Answer", type="primary", use_container_width=True):
-                        with st.spinner("Transcribing your answer using Whisper AI..."):
+                        with st.spinner("Transcribing your answer"):
                             try:
                                 # Prepare audio file for upload
                                 files = {
