@@ -131,16 +131,18 @@ with tab1:
         
         st.write(f"**Total Candidates Screened:** {results['total_processed']}")
         
-        # Convert to DataFrame
+        # Convert to DataFrame (ensure columns exist even if no results)
         df = pd.DataFrame([
             {
-                'Candidate Name': r['candidate_name'],
-                'Match Score': r['match_score'],
-                'Status': r['status'],
-                'Summary': r['summary'][:100] + '...' if len(r['summary']) > 100 else r['summary']
+                'Candidate Name': r.get('candidate_name', ''),
+                'Match Score': r.get('match_score', 0),
+                'Status': r.get('status', ''),
+                'Summary': (r.get('summary', '')[:100] + '...') if len(r.get('summary', '')) > 100 else r.get('summary', '')
             }
-            for r in results['results']
+            for r in results.get('results', [])
         ])
+        if df.empty:
+            df = pd.DataFrame(columns=['Candidate Name', 'Match Score', 'Status', 'Summary'])
         
         # Color code by status
         def color_status(val):
@@ -151,11 +153,9 @@ with tab1:
             else:
                 return 'background-color: #f8d7da'
         
-        st.dataframe(
-            df.style.applymap(color_status, subset=['Status']),
-            use_container_width=True,
-            hide_index=True
-        )
+        # Apply styling only if 'Status' column exists
+        styled = df.style.applymap(color_status, subset=['Status']) if 'Status' in df.columns else df
+        st.dataframe(styled, use_container_width=True, hide_index=True)
         
         # Download as CSV
         csv = df.to_csv(index=False).encode('utf-8')
