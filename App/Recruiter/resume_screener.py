@@ -150,38 +150,15 @@ with tab1:
             {
                 'Rank': r.get('rank', 0),
                 'Candidate Name': r.get('candidate_name', ''),
-                'Similarity Score': f"{r.get('similarity_score', 0):.1f}%",
-                'Status': r.get('status', ''),
-                'Summary': (r.get('summary', '')[:100] + '...') if len(r.get('summary', '')) > 100 else r.get('summary', '')
+                'Status': r.get('status', '')
             }
             for r in results.get('results', [])
         ])
         if df.empty:
-            df = pd.DataFrame(columns=['Rank', 'Candidate Name', 'Similarity Score', 'Status', 'Summary'])
+            df = pd.DataFrame(columns=['Rank', 'Candidate Name', 'Status'])
         
-        # Color code by status
-        def color_status(val):
-            if val == 'Strong Match':
-                return 'background-color: #d4edda'
-            elif val == 'Potential Fit':
-                return 'background-color: #fff3cd'
-            else:
-                return 'background-color: #fff9e6'
-        
-        # Apply styling only if 'Status' column exists
-        styled = df.style.applymap(color_status, subset=['Status']) if 'Status' in df.columns else df
-        st.dataframe(styled, use_container_width=True, hide_index=True)
-        
-        # Metrics display
-        if results.get('results'):
-            cols = st.columns(3)
-            top_candidate = results['results'][0]
-            with cols[0]:
-                st.metric("🥇 Top Candidate", top_candidate['candidate_name'])
-            with cols[1]:
-                st.metric("Similarity Score", f"{top_candidate['similarity_score']:.1f}%")
-            with cols[2]:
-                st.metric("Status", top_candidate['status'])
+        # Display without color coding
+        st.dataframe(df, use_container_width=True, hide_index=True)
         
         # Download as CSV
         csv = df.to_csv(index=False).encode('utf-8')

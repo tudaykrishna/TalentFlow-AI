@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="1200" height="900" viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LangGraph Interview Integration">
+  <defs>
+    <style>
+      .title { font: 700 24px Inter, Arial, sans-serif; fill: #0b0f19; }
+      .subtitle { font: 600 16px Inter, Arial, sans-serif; fill: #0b0f19; }
+      .label { font: 500 14px Inter, Arial, sans-serif; fill: #111827; }
+      .small { font: 500 12px Inter, Arial, sans-serif; fill: #374151; }
+      .box { fill: #ffffff; stroke: #111827; stroke-width: 2; rx: 12; }
+      .node { fill: #F0F9FF; stroke: #0369A1; stroke-width: 2; rx: 10; }
+      .pill { fill: #F3F4F6; stroke: #9CA3AF; stroke-width: 1.5; rx: 8; }
+      .arrow { stroke: #111827; stroke-width: 2.5; marker-end: url(#arrowhead); fill: none; }
+      .dashed { stroke-dasharray: 6 4; }
+      .highlight { fill: #DBEAFE; stroke: #1D4ED8; stroke-width: 2; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#111827" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="40" y="45" class="title">LangGraph Interview Integration — Step-by-Step Flow</text>
+  <text x="40" y="70" class="small">How the AI interview system uses LangGraph StateGraph for orchestration and persistence</text>
+
+  <!-- Step 1: API Request -->
+  <g transform="translate(40, 120)">
+    <rect class="box" width="300" height="140"/>
+    <text x="150" y="30" class="subtitle" text-anchor="middle">1. Frontend/Client</text>
+    <text x="150" y="55" class="small" text-anchor="middle">User starts interview</text>
+    
+    <rect class="pill" x="20" y="70" width="260" height="30"/>
+    <text x="150" y="90" class="label" text-anchor="middle">POST /interview/start</text>
+    
+    <rect class="pill" x="20" y="110" width="260" height="30"/>
+    <text x="150" y="130" class="label" text-anchor="middle">POST /interview/{id}/answer</text>
+  </g>
+
+  <!-- Arrow -->
+  <path d="M 340,190 L 420,190" class="arrow"/>
+  <text x="360" y="185" class="small">HTTP Request</text>
+
+  <!-- Step 2: FastAPI Routes -->
+  <g transform="translate(420, 120)">
+    <rect class="box" width="300" height="140"/>
+    <text x="150" y="30" class="subtitle" text-anchor="middle">2. FastAPI Routes</text>
+    <text x="150" y="55" class="small" text-anchor="middle">interview_routes.py</text>
+    
+    <text x="20" y="80" class="small">• Validates request</text>
+    <text x="20" y="100" class="small">• Calls LangGraphRunner</text>
+    <text x="20" y="120" class="small">• Returns response</text>
+  </g>
+
+  <!-- Arrow -->
+  <path d="M 720,190 L 800,190" class="arrow"/>
+  <text x="740" y="185" class="small">Calls</text>
+
+  <!-- Step 3: LangGraph Runner -->
+  <g transform="translate(800, 100)">
+    <rect class="highlight" width="360" height="180"/>
+    <text x="180" y="30" class="subtitle" text-anchor="middle">3. LangGraph Runner</text>
+    <text x="180" y="55" class="small" text-anchor="middle">langgraph_runner.py (NEW FILE)</text>
+    
+    <rect class="pill" x="20" y="70" width="320" height="26"/>
+    <text x="180" y="88" class="label" text-anchor="middle">start_interview() → builds StateGraph</text>
+    
+    <rect class="pill" x="20" y="104" width="320" height="26"/>
+    <text x="180" y="122" class="label" text-anchor="middle">step_interview() → advances graph</text>
+    
+    <rect class="pill" x="20" y="138" width="320" height="26"/>
+    <text x="180" y="156" class="label" text-anchor="middle">get_state() → returns current state</text>
+  </g>
+
+  <!-- Arrow down -->
+  <path d="M 980,280 L 980,340" class="arrow"/>
+  <text x="990" y="310" class="small">Uses</text>
+
+  <!-- Step 4: StateGraph Nodes -->
+  <g transform="translate(100, 340)">
+    <rect class="box" width="1060" height="240"/>
+    <text x="530" y="30" class="subtitle" text-anchor="middle">4. StateGraph — Interview Nodes (graph execution)</text>
+    <text x="530" y="55" class="small" text-anchor="middle">Each node is a function that reads state and returns updates</text>
+
+    <!-- Node boxes -->
+    <g transform="translate(40, 80)">
+      <rect class="node" width="220" height="130"/>
+      <text x="110" y="25" class="label" text-anchor="middle">Node: generate_plan</text>
+      <text x="110" y="50" class="small" text-anchor="middle">Input: job_description,</text>
+      <text x="110" y="68" class="small" text-anchor="middle">resume_content</text>
+      <text x="110" y="90" class="small" text-anchor="middle">Action: Generate 5 topics</text>
+      <text x="110" y="110" class="small" text-anchor="middle">Output: interview_plan</text>
+    </g>
+
+    <g transform="translate(280, 80)">
+      <rect class="node" width="220" height="130"/>
+      <text x="110" y="25" class="label" text-anchor="middle">Node: generate_question</text>
+      <text x="110" y="50" class="small" text-anchor="middle">Input: interview_plan,</text>
+      <text x="110" y="68" class="small" text-anchor="middle">history, evaluations</text>
+      <text x="110" y="90" class="small" text-anchor="middle">Action: Generate next Q</text>
+      <text x="110" y="110" class="small" text-anchor="middle">Output: current_question</text>
+    </g>
+
+    <g transform="translate(520, 80)">
+      <rect class="node" width="220" height="130"/>
+      <text x="110" y="25" class="label" text-anchor="middle">Node: evaluate_answer</text>
+      <text x="110" y="50" class="small" text-anchor="middle">Input: current_question,</text>
+      <text x="110" y="68" class="small" text-anchor="middle">candidate answer</text>
+      <text x="110" y="90" class="small" text-anchor="middle">Action: Rate 1-5 + feedback</text>
+      <text x="110" y="110" class="small" text-anchor="middle">Output: evaluation added</text>
+    </g>
+
+    <g transform="translate(760, 80)">
+      <rect class="node" width="220" height="130"/>
+      <text x="110" y="25" class="label" text-anchor="middle">Node: summarize</text>
+      <text x="110" y="50" class="small" text-anchor="middle">Input: full history,</text>
+      <text x="110" y="68" class="small" text-anchor="middle">all evaluations</text>
+      <text x="110" y="90" class="small" text-anchor="middle">Action: Final summary</text>
+      <text x="110" y="110" class="small" text-anchor="middle">Output: recommendation</text>
+    </g>
+
+    <!-- Flow arrows between nodes -->
+    <path d="M 260,145 L 280,145" class="arrow"/>
+    <path d="M 500,145 L 520,145" class="arrow"/>
+    <path d="M 740,145 L 760,145" class="arrow"/>
+  </g>
+
+  <!-- Arrow down to persistence -->
+  <path d="M 630,580 L 630,640" class="arrow"/>
+  <text x="640" y="610" class="small">Saves state</text>
+
+  <!-- Step 5: Persistence -->
+  <g transform="translate(320, 640)">
+    <rect class="box" width="620" height="140"/>
+    <text x="310" y="30" class="subtitle" text-anchor="middle">5. Persistence / Checkpointing</text>
+    <text x="310" y="55" class="small" text-anchor="middle">Save state after each node so interviews can be resumed</text>
+    
+    <g transform="translate(40, 70)">
+      <rect class="pill" width="260" height="50"/>
+      <text x="130" y="22" class="label" text-anchor="middle">Option A: MongoDB Saver</text>
+      <text x="130" y="40" class="small" text-anchor="middle">langgraph-checkpoint lib</text>
+    </g>
+
+    <g transform="translate(320, 70)">
+      <rect class="pill" width="260" height="50"/>
+      <text x="130" y="22" class="label" text-anchor="middle">Option B: Custom Saver</text>
+      <text x="130" y="40" class="small" text-anchor="middle">Store in interviews collection</text>
+    </g>
+  </g>
+
+  <!-- Arrow back to runner (resume) -->
+  <path d="M 320,710 L 180,710 L 180,190 L 420,190" class="arrow dashed"/>
+  <text x="200" y="705" class="small">Resume interview</text>
+
+  <!-- Legend -->
+  <g transform="translate(40, 820)">
+    <text x="0" y="0" class="subtitle">Key Benefits:</text>
+    <text x="0" y="25" class="small">✓ State management: Each node sees and updates the same state dict</text>
+    <text x="0" y="45" class="small">✓ Resumable: Save state between steps, recover from crashes</text>
+    <text x="0" y="65" class="small">✓ Testable: Each node is a pure function (state → state updates)</text>
+  </g>
+
+</svg>

@@ -230,17 +230,41 @@ class ResumeScreenerService:
             raise
 
     def _extract_candidate_name(self, resume_text: str) -> str:
-        """Extract candidate name from resume text using heuristics."""
+        """Extract candidate name from resume text using improved heuristics."""
         candidate_name = "Unknown"
         try:
-            first_lines = [l.strip() for l in (resume_text or "").splitlines() if l.strip()]
-            if first_lines:
-                potential_name = first_lines[0]
-                # If first line is short and likely a name, use it
-                if 1 <= len(potential_name.split()) <= 5 and len(potential_name) < 60:
-                    candidate_name = potential_name
+            if not resume_text:
+                return candidate_name
+            
+            # Get non-empty lines
+            lines = [l.strip() for l in resume_text.splitlines() if l.strip()]
+            if not lines:
+                return candidate_name
+            
+            # Try first few lines to find name
+            for i, line in enumerate(lines[:5]):  # Check first 5 lines
+                # Skip common header words
+                skip_words = ['resume', 'curriculum', 'vitae', 'cv', 'profile', 'professional', 'summary']
+                if any(word in line.lower() for word in skip_words):
+                    continue
+                
+                # Check if line looks like a name
+                words = line.split()
+                # Name should be 1-4 words, less than 60 chars, and contain mostly alphabetic characters
+                if 1 <= len(words) <= 4 and len(line) < 60:
+                    # Check if mostly alphabetic (allows for middle initials, Jr., etc.)
+                    alpha_ratio = sum(c.isalpha() or c.isspace() or c in '.-,' for c in line) / len(line)
+                    if alpha_ratio > 0.7:
+                        candidate_name = line
+                        break
+            
+            # If still Unknown, just use first non-empty line as fallback
+            if candidate_name == "Unknown" and lines:
+                candidate_name = lines[0][:60]  # Limit length
+                
         except Exception as e:
             logger.debug("Error extracting candidate name: %s", e)
+        
         return candidate_name
 
     def _calculate_similarity_score(self, distance: float) -> float:

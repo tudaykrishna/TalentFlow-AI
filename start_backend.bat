@@ -1,6 +1,13 @@
 @echo off
-echo Starting TalentFlow AI Backend in uday environment...
+echo ========================================
+echo Starting TalentFlow AI Backend
+echo ========================================
+echo.
+echo Activating conda environment 'uday'...
 call conda activate uday
-python Backend/main.py
+echo.
+echo Starting backend server...
+cd Backend
+python main.py
 pause
 
