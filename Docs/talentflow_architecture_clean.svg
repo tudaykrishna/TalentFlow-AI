@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="1440" height="940" viewBox="0 0 1440 940" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="TalentFlow AI system architecture">
+  <defs>
+    <style>
+      .title { font: 700 26px Inter, Arial, sans-serif; fill: #0b0f19; }
+      .subtitle { font: 600 18px Inter, Arial, sans-serif; fill: #0b0f19; }
+      .label { font: 500 15px Inter, Arial, sans-serif; fill: #111827; }
+      .small { font: 500 13px Inter, Arial, sans-serif; fill: #374151; }
+      .box { fill: #ffffff; stroke: #111827; stroke-width: 2; rx: 16; }
+      .pill { fill: #F3F4F6; stroke: #9CA3AF; stroke-width: 1.5; rx: 12; }
+      .cloud { fill: #F0F9FF; stroke: #0369A1; stroke-width: 2; }
+      .db { fill: #F8FAFC; stroke: #0F172A; stroke-width: 2; rx: 16; }
+      .arrow { stroke: #111827; stroke-width: 2.5; marker-end: url(#arrowhead); fill: none; }
+      .dashed { stroke-dasharray: 6 6; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#111827" />
+    </marker>
+  </defs>
+
+  <text x="40" y="52" class="title">TalentFlow AI — System Architecture</text>
+  <text x="40" y="78" class="small">Streamlit + FastAPI + MongoDB + ChromaDB + Azure OpenAI. Voice: Whisper (local) &amp; gTTS.</text>
+
+  <!-- Roles -->
+  <g id="roles">
+    <rect class="box" x="40" y="120" width="180" height="220"/>
+    <text x="60" y="148" class="subtitle">Roles</text>
+    <rect class="pill" x="60" y="172" width="140" height="34"/><text x="86" y="193" class="label">Recruiter</text>
+    <rect class="pill" x="60" y="216" width="140" height="34"/><text x="112" y="237" class="label">User</text>
+    <rect class="pill" x="60" y="260" width="140" height="34"/><text x="108" y="281" class="label">Admin</text>
+  </g>
+
+  <!-- Frontend -->
+  <g id="frontend">
+    <rect class="box" x="260" y="120" width="300" height="300"/>
+    <text x="280" y="148" class="subtitle">Streamlit Web App</text>
+    <text x="280" y="170" class="small">Dashboards: Recruiter, User, Admin</text>
+
+    <rect class="pill" x="280" y="188" width="260" height="34"/><text x="292" y="210" class="label">JD Generator (PDF export)</text>
+    <rect class="pill" x="280" y="230" width="260" height="34"/><text x="296" y="252" class="label">Resume Screener (Top‑K)</text>
+    <rect class="pill" x="280" y="272" width="260" height="34"/><text x="296" y="294" class="label">Interview Assignment</text>
+    <rect class="pill" x="280" y="314" width="260" height="34"/><text x="296" y="336" class="label">Interview Results</text>
+    <rect class="pill" x="280" y="356" width="260" height="34"/><text x="330" y="378" class="label">App Settings</text>
+  </g>
+
+  <!-- Backend -->
+  <g id="backend">
+    <rect class="box" x="600" y="120" width="320" height="500"/>
+    <text x="620" y="148" class="subtitle">FastAPI Backend</text>
+    <text x="620" y="170" class="small">Routes: auth, jd, resume, interview</text>
+
+    <rect class="pill" x="620" y="188" width="280" height="34"/><text x="732" y="210" class="label">Auth Service</text>
+    <rect class="pill" x="620" y="230" width="280" height="34"/><text x="740" y="252" class="label">JD Service</text>
+    <rect class="pill" x="620" y="272" width="280" height="34"/><text x="630" y="294" class="label">Resume Screening (Top‑K + ChromaDB)</text>
+    <rect class="pill" x="620" y="314" width="280" height="34"/><text x="736" y="336" class="label">Interview Service</text>
+    <rect class="pill" x="620" y="356" width="280" height="34"/><text x="688" y="378" class="label">Validation &amp; Upload Handling</text>
+    <rect class="pill" x="620" y="398" width="280" height="34"/><text x="665" y="420" class="label">Whisper STT Service (local)</text>
+    <rect class="pill" x="620" y="440" width="280" height="34"/><text x="674" y="462" class="label">TTS Service (Google gTTS)</text>
+    <rect class="pill" x="620" y="482" width="280" height="34"/><text x="698" y="504" class="label">LangChain + LangGraph</text>
+  </g>
+
+  <!-- Databases -->
+  <g id="dbs">
+    <rect class="db" x="960" y="180" width="200" height="150"/>
+    <text x="1000" y="208" class="subtitle">MongoDB</text>
+    <text x="980" y="232" class="small">Users, JDs, Interviews,</text>
+    <text x="980" y="252" class="small">Results &amp; Metadata</text>
+
+    <rect class="db" x="960" y="360" width="200" height="130"/>
+    <text x="1000" y="388" class="subtitle">ChromaDB</text>
+    <text x="980" y="412" class="small">Resume embeddings &amp;</text>
+    <text x="980" y="432" class="small">Similarity search</text>
+  </g>
+
+  <!-- Azure OpenAI -->
+  <g id="azure">
+    <ellipse class="cloud" cx="1060" cy="80" rx="140" ry="50"/>
+    <text x="980" y="75" class="subtitle">Azure OpenAI</text>
+    <text x="940" y="95" class="small">GPT‑4o‑mini (JD, interview, scoring)</text>
+    <text x="960" y="113" class="small">Embeddings (semantic similarity)</text>
+  </g>
+
+  <!-- Voice Path -->
+  <g id="voice">
+    <rect class="box" x="260" y="460" width="300" height="160"/>
+    <text x="280" y="488" class="subtitle">Voice Path</text>
+    <text x="280" y="512" class="small">Candidate speech → Whisper STT (local)</text>
+    <text x="280" y="532" class="small">Evaluation &amp; next question → Azure OpenAI</text>
+    <text x="280" y="552" class="small">Question audio → Google TTS</text>
+  </g>
+
+  <!-- Arrows: Roles -> Frontend -->
+  <path class="arrow" d="M220,189 L260,189"/>
+  <path class="arrow" d="M220,231 L260,231"/>
+  <path class="arrow" d="M220,273 L260,273"/>
+
+  <!-- Frontend -> Backend (center) -->
+  <path class="arrow" d="M560,270 L600,270"/>
+
+  <!-- Backend -> Databases (center-lines) -->
+  <path class="arrow" d="M920,255 L960,255"/>
+  <path class="arrow" d="M920,425 L960,425"/>
+
+  <!-- Backend <-> Azure (bidirectional concept) -->
+  <path class="arrow" d="M760,120 C800,92 900,80 920,80"/>
+  <path class="arrow dashed" d="M920,80 C900,80 800,92 760,120"/>
+
+  <!-- Voice path connections: Frontend -> Backend STT/TTS services and to Chroma (for completeness) -->
+  <path class="arrow" d="M560,520 L620,520"/>
+  <path class="arrow" d="M760,458 L960,458"/>
+
+  <!-- Legend -->
+  <g id="legend">
+    <rect class="box" x="960" y="520" width="420" height="160"/>
+    <text x="980" y="550" class="subtitle">Legend</text>
+    <circle cx="985" cy="568" r="6" fill="#111827"/><text x="1000" y="572" class="small">Solid arrow: primary data/control flow</text>
+    <line x1="974" y1="590" x2="994" y2="590" class="arrow dashed"/>
+    <text x="1000" y="595" class="small">Dashed arrow: response/return</text>
+    <rect class="pill" x="974" y="610" width="14" height="14"/><text x="1000" y="622" class="small">Service</text>
+    <rect class="db" x="974" y="634" width="14" height="14"/><text x="1000" y="646" class="small">Datastore</text>
+    <ellipse class="cloud" cx="981" cy="668" rx="10" ry="8"/><text x="1000" y="672" class="small">External AI provider</text>
+  </g>
+</svg>
